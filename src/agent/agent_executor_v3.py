@@ -140,6 +140,13 @@ class AgentExecutorV3:
 Available tools:
 {tool_descriptions}
 
+**Tool Selection Guidelines:**
+- web_search: Returns quick links and snippets from search engines. Use for finding URLs.
+- web_agent: Visits websites, extracts full content, and provides detailed summaries with citations. Use when user wants comprehensive information, detailed content, or research from web sources.
+- document_search: Search through uploaded documents in the database.
+
+**Important:** If the user asks for "latest news", "recent information", or wants detailed web research (not just links), use web_agent to visit sites and extract full content.
+
 User query: "{state['query']}"
 
 Respond with ONLY the tool name, nothing else."""
@@ -236,6 +243,21 @@ Response:"""
 
             elif tool_name == "web_search":
                 result = tool.run(query=query)
+
+            elif tool_name == "web_agent":
+                # Extract URLs from query
+                import re
+                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                urls = re.findall(url_pattern, query)
+
+                if urls:
+                    if len(urls) == 1:
+                        result = tool.run_tool(url=urls[0])
+                    else:
+                        result = tool.run_tool(urls=urls)
+                else:
+                    # No URLs found - ask LLM to extract or guide user
+                    result = tool.run_tool(url=None)
 
             else:  # document_search
                 result = tool.run(query=query)

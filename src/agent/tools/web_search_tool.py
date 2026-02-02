@@ -28,9 +28,9 @@ class WebSearchTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return """Search the internet for current information, recent events, news, or real-time data. \
-Use this tool when the question is about current events, recent developments, real-time information, \
-or anything not available in the document database. Do NOT use for questions about stored documents."""
+        return """Quick web search that returns links and short snippets from search engines. \
+Use this tool to find URLs or get quick overviews. Returns links only, not full content. \
+For detailed content from websites, use web_agent instead. Best for finding what's available online."""
 
     def _run(self, query: str, num_results: Optional[int] = None) -> str:
         """

@@ -115,9 +115,10 @@ class WebAgentTool(BaseTool):
     def description(self) -> str:
         """Description of what the tool does."""
         return (
-            "Autonomously browse websites, extract content, and synthesize information. "
-            "Use this tool to visit URLs, extract article content, and create structured summaries. "
-            "Handles JavaScript-rendered pages and provides clean, citation-backed results."
+            "Visit websites and extract full article content with detailed summaries and citations. "
+            "Use this tool for comprehensive web research, latest news analysis, detailed information gathering, "
+            "or when you need more than just links - actual content from web pages. "
+            "Handles JavaScript-rendered pages and provides clean, structured output with proper attribution."
         )
 
     def _run(self, *args, **kwargs) -> str:
