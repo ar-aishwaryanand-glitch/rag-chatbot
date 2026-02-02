@@ -66,7 +66,7 @@ Use for understanding what documents are available or checking indexing status."
         """Get vector store statistics."""
         try:
             # Get vector store
-            vectorstore = self.vector_store.vectorstore
+            vectorstore = self.vector_store.vector_store
 
             if not vectorstore:
                 return "Vector store not initialized"
@@ -81,15 +81,15 @@ Use for understanding what documents are available or checking indexing status."
 - Status: Active
 - Embedding dimension: {index.d if hasattr(index, 'd') else 'Unknown'}"""
 
-        except AttributeError:
-            return "Vector store statistics not available"
+        except AttributeError as e:
+            return f"Vector store statistics not available: {str(e)}"
 
     def _list_documents(self) -> str:
         """List indexed documents (approximation)."""
         try:
             # Get all documents from vector store
             # Note: FAISS doesn't store metadata easily, so this is a workaround
-            vectorstore = self.vector_store.vectorstore
+            vectorstore = self.vector_store.vector_store
 
             if not vectorstore:
                 return "Vector store not initialized"

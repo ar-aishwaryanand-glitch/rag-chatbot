@@ -49,46 +49,47 @@ Use for tasks like generating Fibonacci sequence, data processing, etc."""
         if timeout is None:
             timeout = self.timeout
 
-        try:
-            from RestrictedPython import compile_restricted
-            from RestrictedPython.Guards import safe_builtins, guarded_iter_unpack_sequence
+        # Basic safety check
+        if not self.is_safe_code(code):
+            return "Error: Code contains potentially dangerous operations"
 
+        try:
             # Redirect stdout to capture output
             old_stdout = sys.stdout
             sys.stdout = captured_output = io.StringIO()
 
             try:
-                # Compile with restrictions
-                byte_code = compile_restricted(
-                    code,
-                    filename='<inline code>',
-                    mode='exec'
-                )
-
                 # Create safe execution environment
-                def _print_handler(text):
-                    """Custom print handler for RestrictedPython."""
-                    print(text)
-
+                # Note: For POC, we use standard exec with restricted globals
+                # RestrictedPython can be added for production
                 safe_globals = {
-                    '__builtins__': safe_builtins,
-                    '_iter_unpack_sequence_': guarded_iter_unpack_sequence,
-                    '_getiter_': iter,
-                    '_print_': _print_handler,  # Required by RestrictedPython
-                    '_write_': lambda x: x,  # Allow output
-                    'range': range,
-                    'len': len,
-                    'enumerate': enumerate,
-                    'zip': zip,
-                    'map': map,
-                    'filter': filter,
-                    'sum': sum,
-                    'min': min,
-                    'max': max,
-                    'abs': abs,
-                    'round': round,
-                    'sorted': sorted,
-                    'print': print,
+                    '__builtins__': {
+                        'range': range,
+                        'len': len,
+                        'enumerate': enumerate,
+                        'zip': zip,
+                        'map': map,
+                        'filter': filter,
+                        'sum': sum,
+                        'min': min,
+                        'max': max,
+                        'abs': abs,
+                        'round': round,
+                        'sorted': sorted,
+                        'list': list,
+                        'tuple': tuple,
+                        'dict': dict,
+                        'set': set,
+                        'str': str,
+                        'int': int,
+                        'float': float,
+                        'bool': bool,
+                        'print': print,
+                        'any': any,
+                        'all': all,
+                        'isinstance': isinstance,
+                        'type': type,
+                    }
                 }
 
                 # Try to import allowed libraries
@@ -108,7 +109,7 @@ Use for tasks like generating Fibonacci sequence, data processing, etc."""
                 safe_globals['math'] = math
 
                 # Execute code
-                exec(byte_code, safe_globals)
+                exec(code, safe_globals)
 
                 # Get output
                 output = captured_output.getvalue()
@@ -121,8 +122,6 @@ Use for tasks like generating Fibonacci sequence, data processing, etc."""
             finally:
                 sys.stdout = old_stdout
 
-        except ImportError:
-            return "Error: RestrictedPython package not installed. Install with: pip install RestrictedPython"
         except SyntaxError as e:
             return f"Syntax error: {str(e)}"
         except Exception as e:
