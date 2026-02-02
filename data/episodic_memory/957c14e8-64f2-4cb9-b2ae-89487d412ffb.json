@@ -1,0 +1,25 @@
+{
+  "session_id": "957c14e8-64f2-4cb9-b2ae-89487d412ffb",
+  "timestamp": "2026-02-02T14:30:20.055438",
+  "summary": "User asked about: Calculate 5 * 5. and 7 other question(s). Tools used: document_search, file_operations, document_manager, calculator",
+  "user_queries": [
+    "Calculate 5 * 5",
+    "Calculate 10 + 20",
+    "What is RAG?",
+    "Explain AI agents",
+    "List files",
+    "Calculate 15 * 8",
+    "Add 50 to that",
+    "Double the result"
+  ],
+  "tools_used": [
+    "document_search",
+    "file_operations",
+    "document_manager",
+    "calculator"
+  ],
+  "outcomes": [],
+  "key_entities": [],
+  "user_preferences": {},
+  "metadata": {}
+}

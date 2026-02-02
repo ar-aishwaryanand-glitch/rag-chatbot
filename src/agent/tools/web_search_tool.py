@@ -47,7 +47,7 @@ or anything not available in the document database. Do NOT use for questions abo
             num_results = self.max_results
 
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
 
             # Perform search
             with DDGS() as ddgs:
@@ -71,6 +71,6 @@ or anything not available in the document database. Do NOT use for questions abo
             return "\n".join(formatted_results)
 
         except ImportError:
-            return "Error: duckduckgo-search package not installed. Install with: pip install duckduckgo-search"
+            return "Error: ddgs package not installed. Install with: pip install ddgs"
         except Exception as e:
             return f"Web search error: {str(e)}"
