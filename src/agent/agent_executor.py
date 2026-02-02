@@ -128,8 +128,63 @@ Respond with ONLY the tool name, nothing else."""
             return state
 
         try:
-            # Execute tool
-            result = tool.run(query=state['query'])
+            # Execute tool with appropriate parameter
+            # Extract tool-specific input from query using LLM
+            query = state['query']
+
+            if tool_name == "calculator":
+                # Extract math expression from query
+                prompt = f"""Extract ONLY the mathematical expression from this query. Return just the expression, nothing else.
+
+Query: {query}
+
+Expression (numbers and operators only):"""
+                response = self.llm.invoke([HumanMessage(content=prompt)])
+                expression = response.content.strip()
+                result = tool.run(expression=expression)
+
+            elif tool_name == "python_executor":
+                # Generate Python code for the task
+                prompt = f"""Write Python code to accomplish this task. Return ONLY the code, no explanations.
+
+Task: {query}
+
+Code:"""
+                response = self.llm.invoke([HumanMessage(content=prompt)])
+                code = response.content.strip().replace("```python", "").replace("```", "").strip()
+                result = tool.run(code=code)
+
+            elif tool_name == "file_operations":
+                # Extract operation and path
+                prompt = f"""Extract the file operation details from this query.
+
+Query: {query}
+
+Respond with: operation path
+Where operation is one of: read, list, search
+And path is the file/directory path (use "." if not specified)
+
+Response:"""
+                response = self.llm.invoke([HumanMessage(content=prompt)])
+                parts = response.content.strip().split(maxsplit=1)
+                operation = parts[0] if parts else "list"
+                path = parts[1] if len(parts) > 1 else "."
+                result = tool.run(operation=operation, path=path)
+
+            elif tool_name == "document_manager":
+                # Determine action
+                action = "info"
+                if "stat" in query.lower():
+                    action = "stats"
+                elif "list" in query.lower():
+                    action = "list"
+                result = tool.run(action=action)
+
+            elif tool_name == "web_search":
+                result = tool.run(query=query)
+
+            else:  # document_search
+                result = tool.run(query=query)
 
             # Store result
             state['tools_used'].append(tool_name)
