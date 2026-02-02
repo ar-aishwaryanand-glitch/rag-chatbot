@@ -1,0 +1,2 @@
+# This file ensures the uploaded/ directory is tracked by git
+# Uploaded files (via Streamlit UI) are stored here temporarily

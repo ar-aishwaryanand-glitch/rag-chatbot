@@ -1,0 +1,44 @@
+# ===== MINIMAL STARTER (Python 3.14 Compatible) =====
+# Basic utilities - install first
+python-dotenv>=1.0.0
+
+# LLM Providers
+groq>=0.4.0  # Groq API for fast LLM inference
+langchain-groq>=0.1.0  # LangChain integration for Groq
+google-genai>=1.0.0  # Optional: for Google embeddings
+
+# Embeddings
+langchain-huggingface>=0.0.1  # HuggingFace embeddings integration
+sentence-transformers>=2.2.0  # Local embeddings models
+
+# Core dependencies with relaxed constraints
+langchain-core>=0.1.0
+langchain-google-genai>=0.1.0  # Optional: for Google embeddings
+
+# Simplified LangChain (without heavy dependencies)
+langchain-community>=0.0.1
+langchain-text-splitters>=0.0.1
+
+# Vector Store Options
+# chromadb>=0.4.0  # Requires pybind11 + compilation on Python 3.14
+faiss-cpu>=1.7.0  # Lightweight alternative, no compilation needed
+
+# UI Framework
+streamlit>=1.30.0  # Web-based UI for RAG system
+
+# ===== INSTALL INSTRUCTIONS =====
+# If you get build errors, try:
+# pip install --upgrade pip setuptools wheel
+# pip install --no-build-isolation -r requirements.txt
+#
+# Or switch to Python 3.11/3.12:
+# brew install python@3.12
+# python3.12 -m venv venv && source venv/bin/activate
+
+# ===== ADD THESE LATER (Heavy packages) =====
+# chromadb>=0.4.0  # Vector database
+# sentence-transformers>=2.2.0  # ~2GB download (PyTorch + models)
+# fastapi>=0.109.0
+# uvicorn>=0.27.0
+# pypdf>=3.17.0
+# gradio>=4.0.0

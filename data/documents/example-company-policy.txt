@@ -1,0 +1,48 @@
+COMPANY REMOTE WORK POLICY
+
+Effective Date: January 1, 2024
+
+Overview:
+This document outlines the remote work policy for all employees. Our company supports flexible work arrangements to promote work-life balance and productivity.
+
+Eligibility:
+All full-time employees who have completed their probationary period (90 days) are eligible for remote work arrangements. Part-time employees may request remote work on a case-by-case basis.
+
+Remote Work Options:
+1. Fully Remote: Employees work from home 5 days per week
+2. Hybrid: Employees split time between office and home (minimum 2 days in office)
+3. Flexible: Employees can choose their work location daily
+
+Equipment and Technology:
+- Company will provide a laptop, monitor, keyboard, and mouse
+- Employees are responsible for providing a suitable workspace
+- High-speed internet connection (minimum 25 Mbps) is required
+- VPN access is mandatory for all remote connections
+- Technical support is available Monday-Friday, 9 AM - 6 PM EST
+
+Communication Expectations:
+- Daily check-ins with team via Slack or Microsoft Teams
+- Video cameras must be on during team meetings
+- Response time to emails: within 4 business hours
+- Response time to urgent Slack messages: within 1 hour
+- Core collaboration hours: 10 AM - 3 PM EST
+
+Security Requirements:
+- Use company-provided VPN for all work activities
+- Do not access company systems from public Wi-Fi without VPN
+- Keep all software and security patches up to date
+- Report any security incidents immediately to IT
+- Lock computer when stepping away from desk
+
+Performance Expectations:
+Remote employees are expected to maintain the same productivity levels as in-office employees. Performance will be measured based on:
+- Completion of assigned tasks and projects
+- Meeting deadlines
+- Quality of work
+- Communication and collaboration with team
+
+Home Office Stipend:
+Employees working remotely 3+ days per week are eligible for a $500 annual stipend for home office equipment and supplies.
+
+Questions:
+For questions about this policy, contact HR at hr@company.com or your direct manager.

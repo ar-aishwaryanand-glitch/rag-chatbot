@@ -1,0 +1,2790 @@
+================================================================================
+                    RAG AGENT POC - COMPLETE IMPLEMENTATION TUTORIAL
+================================================================================
+
+Created: February 2026
+Purpose: Comprehensive guide to understanding and building RAG systems from scratch
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+PART 1: FUNDAMENTALS
+  1. What is RAG and Why Do We Need It?
+  2. System Architecture Overview
+  3. Key Technologies Used
+
+PART 2: COMPONENT IMPLEMENTATION
+  4. Configuration Management (config.py)
+  5. Sample Data (data_loader.py)
+  6. Text Chunking & Embeddings (embeddings.py)
+  7. Vector Database (vector_store.py)
+  8. RAG Pipeline (rag_chain.py)
+  9. CLI Interface (main.py)
+
+PART 3: ADVANCED TOPICS
+  10. Rate Limiting Strategy
+  11. Complete System Flow
+  12. Extending the System
+  13. Troubleshooting & Best Practices
+
+================================================================================
+PART 1: FUNDAMENTALS
+================================================================================
+
+1. WHAT IS RAG AND WHY DO WE NEED IT?
+================================================================================
+
+THE PROBLEM:
+-----------
+Large Language Models (LLMs) like GPT-4, Claude, or Gemini are powerful but have limitations:
+
+  1. KNOWLEDGE CUTOFF
+     - Only know information from their training data
+     - Can't access current information
+     - Example: "What happened yesterday?" → Can't answer
+
+  2. HALLUCINATIONS
+     - Sometimes make up plausible-sounding but incorrect information
+     - No way to verify sources
+     - Example: "Who won the 2025 Nobel Prize?" → Might make up an answer
+
+  3. DOMAIN-SPECIFIC KNOWLEDGE
+     - Don't know about your private documents
+     - Can't access your company's internal data
+     - Example: "What's our Q4 sales strategy?" → No access to your docs
+
+THE RAG SOLUTION:
+----------------
+RAG = Retrieval-Augmented Generation
+
+Instead of relying only on the LLM's training data:
+  1. Store YOUR documents in a searchable format
+  2. When user asks a question, find relevant passages from YOUR docs
+  3. Give those passages to the LLM as context
+  4. LLM generates answer based on YOUR documents
+
+ANALOGY:
+-------
+  Traditional LLM = Closed-book exam (rely on memory)
+  RAG System = Open-book exam (can reference materials)
+
+THE RAG PIPELINE:
+----------------
+
+  PHASE 1: INDEXING (Done once, or when documents change)
+  ┌─────────────────────────────────────────────────────┐
+  │ Documents → Split into chunks → Generate embeddings │
+  │ → Store in vector database                          │
+  └─────────────────────────────────────────────────────┘
+
+  PHASE 2: QUERYING (Done for each user question)
+  ┌─────────────────────────────────────────────────────┐
+  │ User Question → Generate embedding → Find similar   │
+  │ chunks → Format as context → Send to LLM → Answer   │
+  └─────────────────────────────────────────────────────┘
+
+REAL-WORLD EXAMPLE:
+------------------
+Scenario: Building a customer support chatbot for a tech company
+
+Without RAG:
+  User: "How do I reset my password?"
+  LLM: *Makes up generic answer that might not match your actual process*
+
+With RAG:
+  1. Your documentation is indexed in the vector database
+  2. User asks: "How do I reset my password?"
+  3. System retrieves: Your actual password reset documentation
+  4. LLM generates answer based on YOUR documentation
+  5. Result: Accurate, source-cited answer specific to your system!
+
+================================================================================
+2. SYSTEM ARCHITECTURE OVERVIEW
+================================================================================
+
+OUR TECH STACK:
+--------------
+  Language:         Python 3.14
+  LLM:              Google Gemini (gemini-2.0-flash-exp)
+  Embeddings:       Google's embedding-001 model
+  Vector Database:  FAISS (Facebook AI Similarity Search)
+  Framework:        LangChain (for orchestration)
+  Environment:      python-dotenv (for configuration)
+
+ARCHITECTURE DIAGRAM:
+--------------------
+
+              ┌────────────────────┐
+              │   USER (CLI)       │
+              │    main.py         │
+              └─────────┬──────────┘
+                        │
+                        ↓
+              ┌────────────────────┐
+              │   RAG CHAIN        │
+              │   rag_chain.py     │
+              │  (Orchestrator)    │
+              └─────┬────────┬─────┘
+                    │        │
+        ┌───────────┘        └───────────┐
+        ↓                                ↓
+┌──────────────────┐          ┌──────────────────┐
+│  VECTOR STORE    │          │  LLM (Gemini)    │
+│  vector_store.py │          │  ChatGoogleGen.. │
+│  - FAISS index   │          │  - Answer gener. │
+│  - Search        │          │  - Following     │
+└────────┬─────────┘          │    instructions  │
+         │                    └──────────────────┘
+         ↓
+┌──────────────────┐
+│  EMBEDDINGS      │
+│  embeddings.py   │
+│  - Chunking      │
+│  - Embed gen.    │
+└────────┬─────────┘
+         │
+         ↓
+┌──────────────────┐
+│  DATA LOADER     │
+│  data_loader.py  │
+│  - Sample docs   │
+└──────────────────┘
+
+COMPONENT RESPONSIBILITIES:
+---------------------------
+
+1. config.py
+   - Loads API keys from environment
+   - Defines all system constants
+   - Validates configuration
+
+2. data_loader.py
+   - Provides sample documents
+   - In production: Load PDFs, scrape websites, query databases
+
+3. embeddings.py
+   - Splits documents into chunks
+   - Converts text to numerical vectors (embeddings)
+
+4. vector_store.py
+   - Manages FAISS vector database
+   - Stores embeddings
+   - Performs similarity search
+
+5. rag_chain.py
+   - Orchestrates the RAG pipeline
+   - Retrieves context
+   - Calls LLM
+   - Returns structured results
+
+6. main.py
+   - CLI interface
+   - Initializes all components
+   - Interactive Q&A loop
+
+FILE STRUCTURE:
+--------------
+rag-agent-poc/
+├── src/
+│   ├── __init__.py          # Package marker
+│   ├── config.py            # Configuration
+│   ├── data_loader.py       # Sample data
+│   ├── document_loader.py   # Load user documents (NEW!)
+│   ├── embeddings.py        # Chunking & embeddings
+│   ├── vector_store.py      # FAISS database
+│   ├── rag_chain.py         # RAG pipeline
+│   └── main.py              # CLI entry point
+├── data/
+│   ├── documents/           # PUT YOUR DOCUMENTS HERE (NEW!)
+│   │   ├── README.md        # Document guidelines
+│   │   ├── *.txt            # Your text files
+│   │   └── *.md             # Your markdown files
+│   └── vector_store/        # Cached index (created at runtime)
+├── venv/                    # Python virtual environment
+├── .env                     # API keys (KEEP SECRET!)
+├── .env.example             # Template for .env
+├── requirements.txt         # Dependencies
+├── COMPLETE_RAG_TUTORIAL.txt     # This file
+└── ADDING_YOUR_DOCUMENTS.md      # Guide for adding your docs (NEW!)
+
+================================================================================
+3. KEY TECHNOLOGIES USED
+================================================================================
+
+EMBEDDINGS: Converting Text to Numbers
+--------------------------------------
+Problem: Computers can't understand text directly
+Solution: Convert text to high-dimensional vectors (lists of numbers)
+
+Example:
+  Text:      "Machine learning is powerful"
+  Embedding: [0.23, -0.45, 0.67, 0.12, ... ] (768 numbers)
+
+Key Property: SIMILAR MEANINGS → SIMILAR VECTORS
+  "ML is powerful"  → [0.24, -0.44, 0.68, 0.11, ...]  # Very similar!
+  "The sky is blue" → [-0.67, 0.89, -0.23, 0.54, ...] # Different!
+
+This enables SEMANTIC SEARCH (search by meaning, not just keywords)
+
+VECTOR DATABASES: Storing and Searching Embeddings
+--------------------------------------------------
+Challenge: How to quickly find similar vectors among millions?
+
+Traditional Database:
+  - SQL query: "SELECT * WHERE title = 'Machine Learning'"
+  - Exact matches only
+
+Vector Database (FAISS):
+  - Query: [0.23, -0.45, 0.67, ...] (embedding of "What is ML?")
+  - Finds: Top 3 most similar vectors
+  - Uses: Approximate Nearest Neighbor (ANN) search algorithms
+  - Speed: Milliseconds even with millions of vectors
+
+FAISS: Facebook AI Similarity Search
+------------------------------------
+  - Fast C++ library with Python bindings
+  - Runs locally (no cloud required)
+  - Perfect for prototypes and small-to-medium datasets
+  - Free and open-source
+
+LANGCHAIN: LLM Application Framework
+------------------------------------
+  - Provides standard interfaces for LLMs, embeddings, vector stores
+  - Makes code portable (easy to switch from Gemini to GPT)
+  - Handles prompt templates, chains, agents
+  - Rich ecosystem of integrations
+
+GOOGLE GEMINI: The LLM
+----------------------
+  - Google's large language model
+  - Free tier available
+  - Fast (flash model)
+  - Good instruction-following capabilities
+
+================================================================================
+PART 2: COMPONENT IMPLEMENTATION
+================================================================================
+
+4. CONFIGURATION MANAGEMENT (config.py)
+================================================================================
+
+PURPOSE:
+-------
+Centralize all settings in one place. Benefits:
+  - Change settings without modifying code
+  - Keep secrets (API keys) out of code
+  - Consistent configuration across modules
+  - Easy to understand system parameters
+
+KEY CONCEPTS:
+------------
+1. Environment Variables
+   - Store sensitive data outside code
+   - Different values for dev/staging/production
+   - Never commit secrets to git
+
+2. .env Files
+   - Local file storing environment variables
+   - Format: KEY=value
+   - Loaded by python-dotenv library
+
+3. Configuration Class
+   - Single source of truth for all settings
+   - Type conversion (string → int)
+   - Validation (fail fast if missing required values)
+
+IMPLEMENTATION BREAKDOWN:
+------------------------
+
+```python
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file into environment variables
+load_dotenv()
+```
+
+What load_dotenv() does:
+  1. Looks for .env file in current directory
+  2. Reads KEY=value pairs
+  3. Sets them as environment variables
+  4. Now accessible via os.getenv()
+
+```python
+class Config:
+    # API Keys
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+    if not GOOGLE_API_KEY:
+        raise ValueError("GOOGLE_API_KEY not found in environment variables")
+```
+
+Why validate immediately?
+  - Fail fast: Better to crash at startup than during first query
+  - Clear error: User knows exactly what's wrong
+  - Prevents wasted API calls with invalid keys
+
+```python
+    # Embedding Configuration
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/embedding-001")
+    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
+    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
+```
+
+Pattern: os.getenv(key, default)
+  - First argument: Environment variable name
+  - Second argument: Default value if not set
+  - Flexibility: Can override in .env for experimentation
+
+Why These Values?
+  - CHUNK_SIZE=800:
+      * Too small (100): Loses context, many chunks, many API calls
+      * Too large (5000): Wastes tokens, less precise retrieval
+      * 800: Sweet spot for most documents
+
+  - CHUNK_OVERLAP=100:
+      * Prevents losing information at chunk boundaries
+      * Example: "The company was founded in 1995. It grew rapidly..."
+        Without overlap: "It" in chunk 2 loses reference to "company"
+        With overlap: Both chunks contain "company...1995"
+
+```python
+    # LLM Configuration
+    LLM_MODEL = "gemini-2.0-flash-exp"
+    LLM_TEMPERATURE = 0.7
+    LLM_MAX_TOKENS = 1024
+```
+
+LLM Parameters Explained:
+  - MODEL:
+      * flash = Fast, cost-effective
+      * exp = Experimental, latest features
+
+  - TEMPERATURE (0.0 to 1.0):
+      * 0.0: Deterministic, same answer every time, factual
+      * 0.5-0.7: Balanced, slight variation, good for Q&A
+      * 1.0: Creative, varied, good for brainstorming
+      * We use 0.7: Slightly creative but still grounded
+
+  - MAX_TOKENS:
+      * Limits response length
+      * 1024 tokens ≈ 750 words
+      * Prevents overly long responses
+      * Saves cost
+
+```python
+    # Retrieval Configuration
+    TOP_K_RESULTS = 3
+```
+
+Why K=3?
+  - Too few (K=1): Might miss relevant info
+  - Too many (K=10): Wastes tokens, dilutes context, slower
+  - K=3: Research shows good balance for most Q&A tasks
+
+```python
+    # Paths
+    VECTOR_STORE_PATH = Path(__file__).parent.parent / "data" / "vector_store"
+```
+
+Path Construction:
+  - Path(__file__): Location of config.py (rag-agent-poc/src/config.py)
+  - .parent: Go up one level (rag-agent-poc/src/)
+  - .parent: Go up again (rag-agent-poc/)
+  - / "data" / "vector_store": Add subdirectories
+  - Result: rag-agent-poc/data/vector_store
+  - Cross-platform: Works on Windows, Mac, Linux
+
+USAGE IN OTHER FILES:
+--------------------
+```python
+from .config import Config
+
+# Access configuration
+api_key = Config.GOOGLE_API_KEY
+chunk_size = Config.CHUNK_SIZE
+```
+
+Benefits:
+  - Single import: All config available
+  - Type safety: IDE autocomplete works
+  - Easy to modify: Change in one place
+
+================================================================================
+5. SAMPLE DATA (data_loader.py)
+================================================================================
+
+PURPOSE:
+-------
+Provide test documents without needing real data. In production, this module
+would be replaced with:
+  - PDF loaders (PyPDF2, pdfplumber)
+  - Web scrapers (BeautifulSoup, Scrapy)
+  - Database queries (SQLAlchemy)
+  - API integrations (requests)
+
+DOCUMENT STRUCTURE:
+------------------
+Each document is a dictionary with two keys:
+
+```python
+{
+    "content": "The actual text content...",
+    "metadata": {
+        "source": "document_identifier",
+        "topic": "category_or_tag"
+    }
+}
+```
+
+Why Separate Content and Metadata?
+  - Content: What gets embedded and searched
+  - Metadata: Additional info for filtering, source attribution
+  - Flexibility: Can add more metadata fields later (date, author, etc.)
+
+IMPLEMENTATION:
+--------------
+
+```python
+def get_sample_documents(limit: int = None) -> List[Dict[str, str]]:
+    documents = [
+        {
+            "content": """Python is a high-level, interpreted programming
+                         language...""",
+            "metadata": {"source": "python_basics", "topic": "python"}
+        },
+        # ... 9 more documents
+    ]
+
+    if limit is not None:
+        return documents[:limit]
+    return documents
+```
+
+The Limit Parameter:
+  Why added? RATE LIMITING!
+  - During development: Test with 2 documents before processing all 10
+  - Minimize API calls: Each document → API call for embedding
+  - Iterate faster: Quick tests with small dataset
+  - Scale gradually: 2 → 5 → 10 → 100 → 1000
+
+Usage:
+  get_sample_documents()      # Returns all 10
+  get_sample_documents(5)     # Returns first 5
+  get_sample_documents(2)     # Returns first 2 (testing)
+
+DOCUMENT TOPICS:
+---------------
+We chose topics related to AI/ML/RAG to create a coherent knowledge base:
+
+  1. Python - Programming language fundamentals
+  2. Machine Learning - ML concepts and types
+  3. Deep Learning - Neural networks and frameworks
+  4. Natural Language Processing - NLP tasks and models
+  5. Large Language Models - LLMs and capabilities
+  6. RAG - Retrieval-Augmented Generation (meta!)
+  7. Vector Databases - Storage and similarity search
+  8. LangChain - Framework for LLM apps
+  9. Embeddings - Vector representations
+  10. Prompt Engineering - Optimizing LLM inputs
+
+Benefits of This Topic Selection:
+  - Cohesive: Related topics enable meaningful connections
+  - Demonstrative: Shows semantic search across related concepts
+  - Self-referential: User can ask "What is RAG?" to learn about the system!
+
+HELPER FUNCTIONS:
+----------------
+
+```python
+def get_document_count() -> int:
+    return len(get_sample_documents())
+```
+
+Usage: Display "Loading 10 documents..." in UI
+
+```python
+def get_documents_by_topic(topic: str) -> List[Dict[str, str]]:
+    all_docs = get_sample_documents()
+    return [doc for doc in all_docs if doc["metadata"]["topic"] == topic]
+```
+
+Usage (Future Extension):
+  - Filter before indexing: "Only index 'python' topic"
+  - Hybrid search: First filter by topic, then semantic search
+  - Analytics: "How many documents per topic?"
+
+EXTENDING FOR PRODUCTION:
+-------------------------
+
+Replace sample data with real data:
+
+```python
+def load_documents_from_pdfs(directory: str) -> List[Dict[str, str]]:
+    documents = []
+    for pdf_file in Path(directory).glob("*.pdf"):
+        text = extract_text_from_pdf(pdf_file)
+        documents.append({
+            "content": text,
+            "metadata": {
+                "source": pdf_file.name,
+                "file_type": "pdf",
+                "date_added": datetime.now().isoformat()
+            }
+        })
+    return documents
+```
+
+Or load from web:
+
+```python
+def scrape_documentation(urls: List[str]) -> List[Dict[str, str]]:
+    documents = []
+    for url in urls:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        text = soup.get_text()
+        documents.append({
+            "content": text,
+            "metadata": {
+                "source": url,
+                "scraped_at": datetime.now().isoformat()
+            }
+        })
+    return documents
+```
+
+================================================================================
+6. TEXT CHUNKING & EMBEDDINGS (embeddings.py)
+================================================================================
+
+PURPOSE:
+-------
+Transform raw documents into searchable vector representations.
+
+Two main responsibilities:
+  1. CHUNKING: Split large documents into smaller pieces
+  2. EMBEDDING: Convert text to numerical vectors
+
+WHY CHUNK DOCUMENTS?
+-------------------
+
+Problem 1: Token Limits
+  - LLMs have maximum context length (e.g., 32K tokens)
+  - If we retrieve 3 whole documents, we might exceed this
+  - Solution: Retrieve 3 small, relevant chunks instead
+
+Problem 2: Precision
+  - Whole document might be about many topics
+  - User question is about one specific topic
+  - Chunks allow precise matching to relevant paragraphs
+
+Problem 3: Cost
+  - Many LLM APIs charge per token
+  - Retrieving entire documents wastes money
+  - Chunks reduce unnecessary tokens
+
+Example:
+  Document: 5-page research paper on "Machine Learning"
+  User asks: "What is supervised learning?"
+
+  Without chunking:
+    → Retrieve entire 5-page paper (2000 tokens)
+    → Most content irrelevant
+    → Wastes tokens
+
+  With chunking:
+    → Retrieve paragraph about supervised learning (150 tokens)
+    → Precise and efficient!
+
+CHUNKING STRATEGY:
+-----------------
+
+We use RecursiveCharacterTextSplitter:
+
+```python
+self.text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=Config.CHUNK_SIZE,        # 800 characters
+    chunk_overlap=Config.CHUNK_OVERLAP,  # 100 characters
+    length_function=len,
+    separators=["\n\n", "\n", " ", ""]
+)
+```
+
+How It Works:
+  1. Try to split on "\n\n" (paragraph breaks) FIRST
+  2. If chunks still too large, split on "\n" (line breaks)
+  3. If still too large, split on " " (word boundaries)
+  4. Last resort: split at any character
+
+Why This Order?
+  - Respects document structure
+  - Keeps related sentences together
+  - More natural for LLM to process
+  - Better semantic coherence
+
+Chunk Overlap: The Secret Sauce
+-------------------------------
+
+Without overlap:
+  Chunk 1: "...company was founded in 1995."
+  Chunk 2: "It grew rapidly and became..."
+
+  Problem: "It" loses reference to "company"!
+
+With 100-char overlap:
+  Chunk 1: "...company was founded in 1995."
+  Chunk 2: "...company was founded in 1995. It grew rapidly..."
+
+  ✓ "It" maintains reference!
+
+Visual Example of Chunking:
+--------------------------
+
+Original Document (1400 chars):
+┌────────────────────────────────────────────────┐
+│ Python is a high-level programming language.   │ ← Paragraph 1
+│ It was created by Guido van Rossum in 1991.    │   (200 chars)
+│                                                 │
+│ Python emphasizes code readability and         │ ← Paragraph 2
+│ simplicity. The language supports multiple     │   (250 chars)
+│ programming paradigms including OOP and        │
+│ functional programming.                        │
+│                                                 │
+│ The Python ecosystem is vast. Popular          │ ← Paragraph 3
+│ libraries include NumPy for numerical          │   (300 chars)
+│ computing, Pandas for data analysis, and       │
+│ TensorFlow for machine learning.               │
+│                                                 │
+│ Python's community is one of its greatest      │ ← Paragraph 4
+│ strengths. Millions of developers contribute   │   (200 chars)
+│ to open-source projects and share knowledge.   │
+└────────────────────────────────────────────────┘
+
+After Chunking (chunk_size=800, overlap=100):
+┌────────────────────────────────────────────────┐
+│ CHUNK 1 (800 chars):                           │
+│ Python is a high-level programming language.   │
+│ It was created by Guido van Rossum in 1991.    │
+│ Python emphasizes code readability and         │
+│ simplicity. The language supports multiple     │
+│ programming paradigms including OOP and        │
+│ functional programming.                        │
+│ The Python ecosystem is vast. Popular...       │
+└────────────────────────────────────────────────┘
+                   ↓ 100-char overlap
+┌────────────────────────────────────────────────┐
+│ CHUNK 2 (700 chars):                           │
+│ ...ecosystem is vast. Popular libraries...     │ ← Overlap
+│ include NumPy for numerical computing, Pandas  │
+│ for data analysis, and TensorFlow for machine  │
+│ learning.                                      │
+│ Python's community is one of its greatest      │
+│ strengths. Millions of developers contribute   │
+│ to open-source projects and share knowledge.   │
+└────────────────────────────────────────────────┘
+
+EMBEDDINGS: Text to Vectors
+---------------------------
+
+What are embeddings?
+  Dense vector representations that capture semantic meaning
+
+Example:
+  Input:  "Machine learning is powerful"
+  Output: [0.234, -0.456, 0.678, 0.123, ..., 0.891]  (768 numbers)
+
+Key Properties:
+  1. DIMENSIONALITY: Usually 384, 768, or 1536 dimensions
+     - Higher dimensions = more expressive, but more storage
+     - Google's embedding-001 = 768 dimensions
+
+  2. SEMANTIC SIMILARITY: Similar meanings → Similar vectors
+     ```
+     "ML is powerful"    → [0.23, -0.45, 0.67, ...]
+     "AI is strong"      → [0.25, -0.44, 0.69, ...]  # Similar!
+     "The sky is blue"   → [-0.67, 0.89, -0.23, ...] # Different!
+     ```
+
+  3. DISTANCE METRICS: Measure similarity
+     - Cosine similarity: Angle between vectors
+     - Euclidean distance: Straight-line distance
+     - Dot product: Combines magnitude and direction
+
+How Embeddings Enable Search:
+-----------------------------
+
+Traditional Keyword Search:
+  Query: "What is ML?"
+  Search: Look for documents containing "ML"
+  Problem: Misses "machine learning", "artificial intelligence"
+
+Semantic Search with Embeddings:
+  Query: "What is ML?"
+  1. Convert query to embedding: [0.23, -0.45, 0.67, ...]
+  2. Find chunks with similar embeddings
+  3. Results include:
+     - "Machine Learning is..."  ← Contains "machine learning"
+     - "AI and ML techniques..." ← Contains "ML"
+     - "Supervised learning is..." ← Related concept!
+
+  ✓ Finds relevant content even without exact keywords!
+
+IMPLEMENTATION:
+--------------
+
+```python
+class EmbeddingManager:
+    def __init__(self):
+        self.text_splitter = RecursiveCharacterTextSplitter(...)
+
+        self.embedding_model = GoogleGenerativeAIEmbeddings(
+            model=Config.EMBEDDING_MODEL,
+            google_api_key=Config.GOOGLE_API_KEY
+        )
+```
+
+Why GoogleGenerativeAIEmbeddings?
+  - API-based: No need to download large models locally
+  - Fast: Google's infrastructure
+  - Good quality: Trained on massive datasets
+  - Free tier: 1,500 requests/day
+
+Chunking Documents:
+------------------
+
+```python
+def chunk_documents(self, documents: List[dict]) -> List[Document]:
+    # Convert to LangChain Document format
+    langchain_docs = []
+    for doc in documents:
+        langchain_doc = Document(
+            page_content=doc["content"].strip(),
+            metadata=doc["metadata"]
+        )
+        langchain_docs.append(langchain_doc)
+
+    # Split into chunks
+    chunks = self.text_splitter.split_documents(langchain_docs)
+
+    # Add chunk index
+    for i, chunk in enumerate(chunks):
+        chunk.metadata["chunk_id"] = i
+
+    return chunks
+```
+
+Step-by-step:
+  1. Convert dict → LangChain Document (framework requirement)
+  2. Use text_splitter to create chunks
+  3. Add chunk_id to metadata (useful for debugging)
+  4. Return list of chunk objects
+
+Why Add chunk_id?
+  - Debugging: "Which chunk was retrieved?"
+  - Analytics: "Which chunks are most frequently retrieved?"
+  - Ordering: "Display chunks in original order"
+
+Generating Embeddings:
+---------------------
+
+```python
+def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+    embeddings = self.embedding_model.embed_documents(texts)
+    return embeddings
+```
+
+What happens inside embed_documents()?
+  1. Texts sent to Google's API
+  2. Transformer model processes each text
+  3. Returns list of 768-dimensional vectors
+  4. Each text → one vector
+
+Note: We don't usually call this directly. FAISS handles it internally!
+
+Query Embedding:
+---------------
+
+```python
+def generate_query_embedding(self, query: str) -> List[float]:
+    embedding = self.embedding_model.embed_query(query)
+    return embedding
+```
+
+Why separate method for queries?
+  - Some models optimize differently for queries vs. documents
+  - API endpoints might differ
+  - Future: Could use query expansion or rewriting
+
+================================================================================
+7. VECTOR DATABASE (vector_store.py)
+================================================================================
+
+PURPOSE:
+-------
+Store document embeddings and enable fast similarity search.
+
+What is a Vector Database?
+  Traditional DB: Stores structured data, searches with SQL
+  Vector DB: Stores high-dimensional vectors, searches by similarity
+
+Example:
+  Traditional DB:
+    Query: SELECT * FROM docs WHERE title = 'Python'
+    → Exact match only
+
+  Vector DB:
+    Query: [0.23, -0.45, 0.67, ...]  (embedding of "What is Python?")
+    → Find top 3 most similar vectors
+    → Returns documents about Python, programming, coding
+
+WHY FAISS?
+---------
+  - FAST: Optimized C++ with Python bindings
+  - LOCAL: Runs on your machine, no cloud needed
+  - FREE: Open-source, no API costs
+  - SCALABLE: Handles millions of vectors
+  - SIMPLE: Easy to save/load indices
+
+Alternatives and When to Use Them:
+  - Pinecone: Cloud-based, great for production, costs money
+  - Weaviate: Open-source, more features, more complex
+  - ChromaDB: Python-native, good for small datasets
+  - FAISS: Best for POCs and local development ← We use this!
+
+HOW SIMILARITY SEARCH WORKS:
+----------------------------
+
+Naive Approach (Brute Force):
+  1. Compare query vector to EVERY document vector
+  2. Calculate distance for each
+  3. Sort by distance
+  4. Return top K
+
+  Problem: Slow for large datasets!
+  - 1 million documents = 1 million comparisons per query
+  - Not feasible for real-time applications
+
+FAISS Approach (Approximate Nearest Neighbor):
+  1. Build index with smart data structures (trees, graphs, clusters)
+  2. Query uses index to narrow down candidates
+  3. Only compare to a subset of vectors
+  4. Return top K (approximately correct)
+
+  Result: 100x faster with 95%+ accuracy!
+
+Distance Metrics:
+----------------
+
+Cosine Similarity:
+  - Measures angle between vectors
+  - Range: -1 (opposite) to 1 (identical)
+  - Ignores magnitude, focuses on direction
+  - Best for text (normalized vectors)
+
+  Example:
+    Vector A: [1, 2, 3]
+    Vector B: [2, 4, 6]  (same direction, 2x magnitude)
+    Cosine similarity = 1.0  (perfectly aligned!)
+
+Euclidean Distance:
+  - Measures straight-line distance
+  - Range: 0 (identical) to ∞
+  - Considers both direction and magnitude
+  - Good for image embeddings
+
+IMPLEMENTATION WITH RATE LIMITING:
+----------------------------------
+
+The Critical Challenge:
+  Creating embeddings requires API calls
+  Google's free tier: 1,500 requests/day
+  Without rate limiting → Hit quota instantly!
+
+Solution: Batch Processing with Delays
+
+```python
+class VectorStoreManager:
+    def __init__(self, embedding_manager: EmbeddingManager):
+        self.embedding_manager = embedding_manager
+        self.vector_store: Optional[FAISS] = None
+        self.store_path = Config.VECTOR_STORE_PATH
+```
+
+Creating Vector Store with Rate Limiting:
+-----------------------------------------
+
+```python
+def create_vector_store(self, chunks: List[Document],
+                        batch_size: int = 3,
+                        delay: float = 2.0) -> FAISS:
+```
+
+Parameters:
+  - chunks: Document chunks to index
+  - batch_size: How many chunks to process at once (default: 3)
+  - delay: Seconds to wait between batches (default: 2.0)
+
+Why These Defaults?
+  - batch_size=3:
+      * Small enough to stay under rate limits
+      * Large enough to be efficient
+      * 5 documents → 2 batches (3 + 2)
+
+  - delay=2.0:
+      * Comfortable buffer for API
+      * Fast enough for good UX
+      * Total for 5 docs: ~4 seconds
+
+The Two-Phase Approach:
+-----------------------
+
+PHASE 1: Create Initial Index
+
+```python
+# Process first batch
+first_batch = chunks[:batch_size]
+print(f"\n[Batch 1/{total_batches}] Processing {len(first_batch)} chunks...")
+
+self.vector_store = FAISS.from_documents(
+    documents=first_batch,
+    embedding=self.embedding_manager.embedding_model
+)
+```
+
+Why create separately?
+  - FAISS.from_documents() creates a NEW index
+  - Returns initialized FAISS object
+  - Can't add to non-existent index!
+
+What happens inside from_documents()?
+  1. Extracts text from documents
+  2. Calls embedding_model.embed_documents(texts)
+  3. Creates FAISS index
+  4. Adds vectors to index
+  5. Stores document metadata
+
+PHASE 2: Add Remaining Batches
+
+```python
+for i in range(batch_size, len(chunks), batch_size):
+    batch_num = (i // batch_size) + 1
+
+    # Wait before next batch
+    if i > batch_size:
+        print(f"⏳ Waiting {delay}s before next batch...")
+        time.sleep(delay)
+
+    batch = chunks[i:i + batch_size]
+    print(f"\n[Batch {batch_num}/{total_batches}] Processing {len(batch)} chunks...")
+
+    # Add to existing index
+    self.vector_store.add_documents(batch)
+    print(f"✓ Batch {batch_num} completed")
+```
+
+Step-by-step:
+  1. Loop through remaining chunks in batches
+  2. Sleep before each batch (rate limiting!)
+  3. Add batch to existing vector store
+  4. Print progress (good UX!)
+
+Example Execution:
+-----------------
+
+Scenario: 5 documents → 5 chunks, batch_size=3, delay=2.0
+
+Timeline:
+  0.0s: [Batch 1/2] Processing 3 chunks...
+  0.5s: ✓ Batch 1 completed
+  0.5s: ⏳ Waiting 2s before next batch...
+  2.5s: [Batch 2/2] Processing 2 chunks...
+  3.0s: ✓ Batch 2 completed
+
+Total time: 3 seconds
+API calls: 2
+Rate limit risk: MINIMAL ✓
+
+Benefits of This Approach:
+  - Stays well under rate limits
+  - Provides progress feedback
+  - Resumable (could add checkpoint logic)
+  - Predictable timing
+
+SAVING AND LOADING:
+------------------
+
+Save Vector Store:
+
+```python
+def save_vector_store(self) -> None:
+    if self.vector_store is None:
+        raise ValueError("No vector store to save")
+
+    self.store_path.mkdir(parents=True, exist_ok=True)
+    self.vector_store.save_local(str(self.store_path))
+```
+
+What gets saved?
+  - index.faiss: Binary file with vectors and search index
+  - index.pkl: Pickled metadata (document text, sources)
+
+Why save?
+  - Avoid recreating embeddings (saves API calls!)
+  - Faster startup (seconds vs. minutes)
+  - Works offline once created
+  - Persistent across restarts
+
+Load Vector Store:
+
+```python
+def load_vector_store(self) -> FAISS:
+    if not self.store_path.exists():
+        raise FileNotFoundError("Vector store not found")
+
+    self.vector_store = FAISS.load_local(
+        str(self.store_path),
+        embeddings=self.embedding_manager.embedding_model,
+        allow_dangerous_deserialization=True
+    )
+    return self.vector_store
+```
+
+Why pass embedding_model to load?
+  - Need same model for query embeddings
+  - FAISS needs to know vector dimensionality
+  - Ensures consistency
+
+Why allow_dangerous_deserialization?
+  - FAISS uses pickle (Python serialization)
+  - Pickle can execute arbitrary code (security risk!)
+  - Safe here: We created the files ourselves
+  - Required parameter to acknowledge the risk
+
+Best Practice for Production:
+  - Use more secure serialization formats
+  - Validate loaded data
+  - Store checksums
+
+SIMILARITY SEARCH:
+-----------------
+
+```python
+def similarity_search_with_score(self, query: str, k: int = 3):
+    if self.vector_store is None:
+        raise ValueError("Vector store not initialized")
+
+    results = self.vector_store.similarity_search_with_score(query, k=k)
+    return results  # [(Document, score), ...]
+```
+
+How it works:
+  1. Convert query to embedding (uses embedding_model)
+  2. FAISS finds k nearest vectors
+  3. Returns documents and similarity scores
+  4. Lower score = more similar
+
+Example:
+  Query: "What is machine learning?"
+
+  Returns:
+  [
+    (Document("Machine Learning is a subset of AI that enables systems to learn..."),
+     0.15),  # Very similar!
+
+    (Document("Deep Learning is a specialized subset of machine learning based on neural networks..."),
+     0.42),  # Related topic
+
+    (Document("Python supports multiple programming paradigms including OOP and functional programming."),
+     0.89)   # Less related
+  ]
+
+Interpreting Scores:
+  - 0.0-0.3: Highly relevant
+  - 0.3-0.6: Somewhat relevant
+  - 0.6-1.0: Less relevant
+  - 1.0+: Probably not relevant
+
+Note: Exact ranges depend on embedding model and data!
+
+RETRIEVER INTERFACE:
+-------------------
+
+```python
+def get_retriever(self, k: int = 3):
+    if self.vector_store is None:
+        raise ValueError("Vector store not initialized")
+
+    return self.vector_store.as_retriever(search_kwargs={"k": k})
+```
+
+What's a retriever?
+  - LangChain abstraction for retrieving documents
+  - Standard interface used by chains
+  - Can swap implementations easily
+
+Why use it?
+  - Integrates with LangChain chains
+  - Cleaner code
+  - Future: Easy to add filters, re-ranking
+
+================================================================================
+8. RAG PIPELINE (rag_chain.py)
+================================================================================
+
+PURPOSE:
+-------
+Orchestrate the complete RAG flow:
+  1. Retrieve relevant context from vector database
+  2. Format context into a prompt
+  3. Call LLM with prompt
+  4. Return structured results with sources
+
+THIS IS THE HEART OF THE RAG SYSTEM!
+
+ARCHITECTURE:
+------------
+
+┌──────────────────────────────────────────────────────────┐
+│  RAGChain                                                 │
+│                                                           │
+│  ┌─────────────┐    ┌──────────────┐    ┌────────────┐ │
+│  │  Retrieval  │ → │   Formatting  │ → │ Generation │ │
+│  │  (Vector    │    │   (Prompt)    │    │ (LLM)      │ │
+│  │   Store)    │    │               │    │            │ │
+│  └─────────────┘    └──────────────┘    └────────────┘ │
+│         ↓                   ↓                   ↓        │
+│   Relevant chunks    Structured prompt    Final answer  │
+└──────────────────────────────────────────────────────────┘
+
+INITIALIZATION:
+--------------
+
+```python
+class RAGChain:
+    def __init__(self, vector_store_manager: VectorStoreManager):
+        self.vector_store_manager = vector_store_manager
+
+        # Initialize LLM
+        self.llm = ChatGoogleGenerativeAI(
+            model=Config.LLM_MODEL,
+            temperature=Config.LLM_TEMPERATURE,
+            max_output_tokens=Config.LLM_MAX_TOKENS,
+            google_api_key=Config.GOOGLE_API_KEY
+        )
+```
+
+LLM Configuration:
+  - model: gemini-2.0-flash-exp
+      * flash = Fast and cost-effective
+      * exp = Latest experimental features
+
+  - temperature: 0.7
+      * 0.0 = Deterministic, same answer every time
+      * 1.0 = Creative, varied answers
+      * 0.7 = Balanced for Q&A
+
+  - max_output_tokens: 1024
+      * ~750 words
+      * Prevents excessive responses
+      * Saves cost
+
+PROMPT TEMPLATE:
+---------------
+
+The Most Critical Part!
+
+```python
+self.prompt_template = ChatPromptTemplate.from_messages([
+    ("system", """You are a helpful AI assistant that answers questions
+                  based on the provided context.
+
+Instructions:
+- Use ONLY the information from the context below to answer the question
+- If the context doesn't contain relevant information, say "I don't have
+  enough information to answer this question based on the provided context."
+- Be concise and clear in your answers
+- If you use information from the context, mention which source it came from
+- Do not make up information or use external knowledge
+
+Context:
+{context}"""),
+    ("human", "{question}")
+])
+```
+
+Let's Break Down This Prompt:
+
+1. "You are a helpful AI assistant..."
+   → Sets the role and tone
+
+2. "Use ONLY the information from the context"
+   → CRITICAL: Prevents hallucination
+   → Forces grounding in provided documents
+   → Without this: LLM might use training data
+
+3. "If the context doesn't contain relevant information, say..."
+   → Prevents making up answers
+   → Better to admit "I don't know" than hallucinate
+   → Builds user trust
+
+4. "Be concise and clear"
+   → Prevents rambling
+   → Respects user's time
+
+5. "Mention which source it came from"
+   → Enables source attribution
+   → User can verify information
+   → Critical for trust
+
+6. "Do not make up information or use external knowledge"
+   → Reinforces grounding behavior
+   → Some models need this repeated!
+
+Why This Prompt Design Works:
+-----------------------------
+
+Bad Prompt:
+  "Answer this question: {question}"
+
+  Problems:
+  - No grounding instruction
+  - Will use training data
+  - Can't verify sources
+  - Might hallucinate
+
+Good Prompt (Ours):
+  - Explicit grounding instructions
+  - Fallback for missing info
+  - Source attribution
+  - Clear expectations
+
+The Context Variable:
+--------------------
+
+{context} gets replaced with formatted retrieved documents:
+
+Example:
+```
+Context:
+[Source 1: python_basics (Topic: python)]
+Python is a high-level, interpreted programming language known for its
+simplicity and readability. Created by Guido van Rossum and first released
+in 1991...
+
+---
+
+[Source 2: ml_intro (Topic: machine_learning)]
+Machine Learning is a subset of artificial intelligence that enables systems
+to learn and improve from experience without being explicitly programmed...
+
+---
+
+[Source 3: deep_learning (Topic: ai)]
+Deep Learning is a specialized subset of machine learning based on artificial
+neural networks with multiple layers...
+```
+
+RETRIEVAL STEP:
+--------------
+
+```python
+def retrieve_context(self, query: str, k: int = Config.TOP_K_RESULTS) -> List[Document]:
+    results = self.vector_store_manager.similarity_search_with_score(query, k=k)
+    documents = [doc for doc, score in results]
+    return documents
+```
+
+What happens:
+  1. Query embedding generated
+  2. FAISS finds k=3 most similar chunks
+  3. Returns list of Document objects
+  4. Scores ignored for now (could use for filtering!)
+
+Potential Enhancement:
+  Add score threshold:
+  ```python
+  documents = [doc for doc, score in results if score < 0.5]
+  ```
+  Only include highly relevant chunks!
+
+FORMATTING STEP:
+---------------
+
+```python
+def format_context(self, documents: List[Document]) -> str:
+    context_parts = []
+
+    for i, doc in enumerate(documents, 1):
+        source = doc.metadata.get("source", "unknown")
+        topic = doc.metadata.get("topic", "unknown")
+        content = doc.page_content.strip()
+
+        context_parts.append(
+            f"[Source {i}: {source} (Topic: {topic})]\n{content}"
+        )
+
+    return "\n\n---\n\n".join(context_parts)
+```
+
+Why Format This Way?
+  - Numbered sources: Easy to reference
+  - Topic labels: Additional context for LLM
+  - Separators (---): Clear boundaries between chunks
+  - Metadata preserved: Enables source citation
+
+Example Output:
+```
+[Source 1: python_basics (Topic: python)]
+Python is a high-level, interpreted programming language...
+
+---
+
+[Source 2: ml_intro (Topic: machine_learning)]
+Machine Learning is a subset of artificial intelligence...
+
+---
+
+[Source 3: deep_learning (Topic: ai)]
+Deep Learning is a specialized subset of machine learning...
+```
+
+GENERATION STEP:
+---------------
+
+```python
+def generate_answer(self, query: str, context: str) -> str:
+    # Format the prompt
+    messages = self.prompt_template.format_messages(
+        context=context,
+        question=query
+    )
+
+    # Generate response
+    response = self.llm.invoke(messages)
+
+    return response.content
+```
+
+What happens:
+  1. Prompt template filled with context and question
+  2. Sent to Gemini API
+  3. LLM generates response
+  4. Return only the text content
+
+Example Flow:
+  Input query: "What is Python?"
+  Context: [Retrieved chunks about Python]
+  Prompt: [System message + Context + "What is Python?"]
+  LLM: Generates answer based on context
+  Output: "Python is a high-level, interpreted programming language created
+           by Guido van Rossum in 1991. According to Source 1 (python_basics)..."
+
+THE MAIN ASK METHOD:
+-------------------
+
+```python
+def ask(self, question: str) -> Dict[str, any]:
+    print(f"\n🔍 Processing question: {question}")
+
+    # Step 1: Retrieve relevant context
+    print("📚 Retrieving relevant context...")
+    documents = self.retrieve_context(question)
+
+    if not documents:
+        return {
+            "question": question,
+            "answer": "No relevant context found for your question.",
+            "context": [],
+            "sources": []
+        }
+
+    # Step 2: Format context
+    context = self.format_context(documents)
+
+    # Step 3: Generate answer
+    print("🤖 Generating answer with Gemini...")
+    answer = self.generate_answer(question, context)
+
+    # Step 4: Extract sources
+    sources = [
+        {
+            "source": doc.metadata.get("source", "unknown"),
+            "topic": doc.metadata.get("topic", "unknown"),
+            "content": doc.page_content.strip()[:200] + "..."
+        }
+        for doc in documents
+    ]
+
+    return {
+        "question": question,
+        "answer": answer,
+        "context": documents,
+        "sources": sources
+    }
+```
+
+Complete Flow:
+  1. Retrieve → Get relevant chunks from vector DB
+  2. Format → Structure chunks into prompt
+  3. Generate → Call LLM with prompt
+  4. Package → Return structured result
+
+Return Structure:
+  - question: Echo back the question
+  - answer: LLM's generated response
+  - context: Full Document objects (for advanced use)
+  - sources: Simplified source info for display
+
+Why Return This Structure?
+  - Structured: Easy to parse and display
+  - Traceable: User can verify sources
+  - Extensible: Can add more fields later
+  - Testable: Easy to unit test
+
+DISPLAY HELPER:
+--------------
+
+```python
+def display_result(self, result: Dict[str, any]) -> None:
+    print("\n" + "="*80)
+    print(f"❓ Question: {result['question']}")
+    print("="*80)
+
+    print(f"\n💡 Answer:\n{result['answer']}")
+
+    print(f"\n📖 Sources Used ({len(result['sources'])}):")
+    for i, source in enumerate(result['sources'], 1):
+        print(f"\n  {i}. Source: {source['source']} (Topic: {source['topic']})")
+        print(f"     Preview: {source['content']}")
+
+    print("\n" + "="*80)
+```
+
+Example Output:
+```
+================================================================================
+❓ Question: What is Python?
+================================================================================
+
+💡 Answer:
+Python is a high-level, interpreted programming language known for its
+simplicity and readability. It was created by Guido van Rossum and first
+released in 1991. According to Source 1 (python_basics), Python emphasizes
+code readability with its use of significant indentation and supports multiple
+programming paradigms including object-oriented and functional programming.
+
+📖 Sources Used (3):
+
+  1. Source: python_basics (Topic: python)
+     Preview: Python is a high-level, interpreted programming language known
+              for its simplicity and readability. Created by Guido van Rossum...
+
+  2. Source: langchain_intro (Topic: frameworks)
+     Preview: LangChain is a framework for developing applications powered by
+              language models. It provides tools and abstractions...
+
+  3. Source: embeddings_explained (Topic: nlp)
+     Preview: Embeddings are dense vector representations of data that capture
+              semantic meaning in a continuous space...
+
+================================================================================
+```
+
+Why This Display?
+  - Clear sections: Easy to scan
+  - Source attribution: User can verify
+  - Previews: User sees what was retrieved
+  - Professional: Good UX
+
+================================================================================
+9. CLI INTERFACE (main.py)
+================================================================================
+
+PURPOSE:
+-------
+Provide a user-friendly command-line interface for interacting with the RAG system.
+
+Responsibilities:
+  1. Initialize all components
+  2. Handle vector store creation/loading
+  3. Provide interactive Q&A loop
+  4. Handle commands (exit, rebuild, sample)
+  5. Display helpful messages
+
+MAIN COMPONENTS:
+---------------
+
+1. print_banner()
+2. initialize_system()
+3. run_interactive_mode()
+4. show_sample_questions()
+5. main()
+
+BANNER:
+------
+
+```python
+def print_banner():
+    print("\n" + "="*80)
+    print("🤖  RAG AGENT POC - Retrieval-Augmented Generation System")
+    print("="*80)
+    print(f"Using: Google Gemini ({Config.LLM_MODEL})")
+    print(f"Embedding Model: {Config.EMBEDDING_MODEL}")
+    print(f"Vector Store: FAISS")
+    print("="*80 + "\n")
+```
+
+Why a banner?
+  - Professional appearance
+  - Shows configuration at startup
+  - User knows what they're using
+  - Good for screenshots/demos
+
+INITIALIZATION:
+--------------
+
+```python
+def initialize_system(rebuild_index: bool = False) -> RAGChain:
+    print("🚀 Initializing RAG system...\n")
+
+    # Initialize components
+    embedding_manager = EmbeddingManager()
+    vector_store_manager = VectorStoreManager(embedding_manager)
+
+    # Check if vector store exists
+    vector_store_exists = Config.VECTOR_STORE_PATH.exists()
+
+    if rebuild_index or not vector_store_exists:
+        # CREATE NEW VECTOR STORE
+        if rebuild_index:
+            print("🔄 Rebuilding vector store from scratch...")
+        else:
+            print("📦 No existing vector store found. Creating new one...")
+
+        print("\n⚠️  NOTE: This will call Google's Embedding API.")
+        print("   Using rate limiting to stay within free tier limits (1,500 requests/day)")
+        print("   Once created, the vector store will be cached and won't need API calls.\n")
+
+        # Load sample documents (limited to 5 for rate limiting)
+        doc_limit = 5
+        print(f"📚 Loading {doc_limit} sample documents (out of {get_document_count()} available)...")
+        documents = get_sample_documents(limit=doc_limit)
+
+        # Chunk documents
+        print("✂️  Chunking documents...")
+        chunks = embedding_manager.chunk_documents(documents)
+
+        # Create vector store with rate limiting
+        print("🔢 Creating embeddings and building vector store...")
+        vector_store_manager.create_vector_store(chunks, batch_size=3, delay=2.0)
+
+        # Save vector store
+        vector_store_manager.save_vector_store()
+        print("✅ Vector store created and saved!\n")
+    else:
+        # LOAD EXISTING VECTOR STORE
+        print("📂 Loading existing vector store...")
+        vector_store_manager.load_vector_store()
+        print("✅ Vector store loaded!\n")
+
+    # Create RAG chain
+    rag_chain = RAGChain(vector_store_manager)
+
+    return rag_chain
+```
+
+Key Design Decisions:
+
+1. Check for Existing Vector Store
+   - Avoids unnecessary API calls
+   - Fast startup if already created
+   - Only rebuild if explicitly requested
+
+2. Rate Limiting Parameters
+   - doc_limit=5: Minimize API calls
+   - batch_size=3: Stay under rate limits
+   - delay=2.0: Safe buffer between batches
+
+3. Informative Messages
+   - User knows what's happening
+   - Sets expectations (API calls, timing)
+   - Professional feel
+
+4. Save Immediately
+   - Don't lose work if process crashes
+   - Can use in future runs
+
+INTERACTIVE MODE:
+----------------
+
+```python
+def run_interactive_mode(rag_chain: RAGChain):
+    print("💬 Interactive Mode")
+    print("-" * 80)
+    print("Ask questions about Python, AI, Machine Learning, NLP, or RAG systems.")
+    print("Commands:")
+    print("  - Type 'exit' or 'quit' to stop")
+    print("  - Type 'rebuild' to rebuild the vector store")
+    print("  - Type 'sample' to see example questions")
+    print("-" * 80 + "\n")
+
+    while True:
+        try:
+            # Get user input
+            question = input("❓ Your question: ").strip()
+
+            if not question:
+                continue
+
+            # Handle commands
+            if question.lower() in ['exit', 'quit']:
+                print("\n👋 Goodbye!")
+                break
+
+            if question.lower() == 'rebuild':
+                print("\n🔄 Rebuilding vector store...")
+                rag_chain = initialize_system(rebuild_index=True)
+                print("✅ Vector store rebuilt! You can continue asking questions.\n")
+                continue
+
+            if question.lower() == 'sample':
+                show_sample_questions()
+                continue
+
+            # Process question with RAG
+            result = rag_chain.ask(question)
+            rag_chain.display_result(result)
+
+            print("\n")
+
+        except KeyboardInterrupt:
+            print("\n\n👋 Goodbye!")
+            break
+        except Exception as e:
+            print(f"\n❌ Error: {e}")
+            print("Please try again.\n")
+```
+
+Interactive Loop Flow:
+  1. Display instructions
+  2. Get user input
+  3. Handle special commands (exit, rebuild, sample)
+  4. Process question through RAG
+  5. Display results
+  6. Repeat
+
+Why This Design?
+  - Simple: Easy to use
+  - Robust: Handles errors gracefully
+  - Flexible: Multiple ways to exit (exit, quit, Ctrl+C)
+  - Helpful: Sample questions available
+
+SAMPLE QUESTIONS:
+----------------
+
+```python
+def show_sample_questions():
+    print("\n📝 Sample Questions:")
+    print("-" * 80)
+    questions = [
+        "What is Python and when was it created?",
+        "Explain the difference between machine learning and deep learning",
+        "What is RAG and how does it work?",
+        "What are vector databases used for?",
+        "What is LangChain?",
+        "How do embeddings work in NLP?",
+        "What are Large Language Models?",
+        "What is prompt engineering?",
+    ]
+    for i, q in enumerate(questions, 1):
+        print(f"  {i}. {q}")
+    print("-" * 80 + "\n")
+```
+
+Why Provide Samples?
+  - Reduces friction: User doesn't have to think of questions
+  - Demonstrates capabilities: Shows what system knows
+  - Good for demos: Quick way to show functionality
+  - Educational: Shows appropriate question formats
+
+MAIN ENTRY POINT:
+----------------
+
+```python
+def main():
+    print_banner()
+
+    # Parse command line arguments
+    rebuild = '--rebuild' in sys.argv
+    demo = '--demo' in sys.argv
+    use_documents = '--use-documents' in sys.argv  # NEW!
+
+    try:
+        # Initialize system
+        rag_chain = initialize_system(rebuild_index=rebuild, use_documents=use_documents)
+
+        # Run demo or interactive mode
+        if demo:
+            run_demo_questions(rag_chain)
+        else:
+            run_interactive_mode(rag_chain, use_documents=use_documents)
+
+    except KeyboardInterrupt:
+        print("\n\n👋 Goodbye!")
+    except Exception as e:
+        print(f"\n❌ Fatal Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+```
+
+Command-Line Arguments:
+  - No args: Interactive mode with sample data
+  - --rebuild: Force rebuild vector store
+  - --demo: Run demo questions
+  - --use-documents: Load documents from data/documents/ (NEW!)
+
+Usage Examples:
+```bash
+# Interactive mode with sample data (normal use)
+python -m src.main
+
+# Use your own documents from data/documents/
+python -m src.main --use-documents
+
+# Rebuild vector store
+python -m src.main --rebuild
+
+# Run demo
+python -m src.main --demo
+```
+
+Error Handling:
+  - Keyboard interrupt (Ctrl+C): Graceful exit
+  - Other exceptions: Show traceback for debugging
+  - sys.exit(1): Indicate failure to shell
+
+================================================================================
+PART 3: ADVANCED TOPICS
+================================================================================
+
+10. RATE LIMITING STRATEGY
+================================================================================
+
+THE PROBLEM:
+-----------
+Google's Free Tier Limits:
+  - Embedding API: 1,500 requests per day
+  - Rate limit: 1,500 requests per minute
+
+Without rate limiting:
+  10 documents → 10 API calls → Quota exhausted in minutes!
+
+THE SOLUTION:
+------------
+Multi-layered approach:
+
+1. BATCH PROCESSING
+   Process documents in small groups with delays
+
+2. CACHING
+   Save vector store to avoid recreating embeddings
+
+3. LIMITING DOCUMENTS
+   Start with fewer documents during development
+
+IMPLEMENTATION:
+--------------
+
+Layer 1: Document Limiting
+
+```python
+doc_limit = 5  # Only process 5 documents initially
+documents = get_sample_documents(limit=doc_limit)
+```
+
+Effect:
+  - 10 documents → 5 documents
+  - Reduces API calls by 50%
+  - Still enough for meaningful testing
+
+Layer 2: Batch Processing
+
+```python
+vector_store_manager.create_vector_store(
+    chunks,
+    batch_size=3,  # Process 3 at a time
+    delay=2.0      # Wait 2 seconds between batches
+)
+```
+
+Effect:
+  - 5 documents → 2 batches (3 + 2)
+  - API calls spread over 4 seconds
+  - Stays well under rate limits
+
+Layer 3: Caching
+
+```python
+if vector_store_exists:
+    vector_store_manager.load_vector_store()  # No API calls!
+else:
+    # Create new (makes API calls)
+```
+
+Effect:
+  - First run: Makes API calls
+  - Subsequent runs: No API calls
+  - Saves 100% of quota after first run
+
+CALCULATING API USAGE:
+---------------------
+
+Scenario 1: Initial Setup (5 documents)
+  Documents: 5
+  Chunks: 5 (assuming 1 chunk per document)
+  Batches: 2 (3 + 2)
+  API Calls: 2 (one per batch)
+  Time: ~4 seconds
+  Quota Used: 2 / 1,500 = 0.13%
+
+Scenario 2: Full Dataset (10 documents)
+  Documents: 10
+  Chunks: 10
+  Batches: 4 (3 + 3 + 3 + 1)
+  API Calls: 4
+  Time: ~8 seconds
+  Quota Used: 4 / 1,500 = 0.27%
+
+Scenario 3: Subsequent Runs
+  API Calls: 0 (loads from cache)
+  Time: <1 second
+  Quota Used: 0%
+
+BEST PRACTICES:
+--------------
+
+1. Start Small
+   - Test with 2-3 documents first
+   - Verify everything works
+   - Then scale up
+
+2. Use Caching
+   - Save vector store immediately
+   - Only rebuild when necessary
+   - Document when to rebuild (data changes, model changes)
+
+3. Monitor Usage
+   - Check Google AI Studio dashboard
+   - Track daily API calls
+   - Set up alerts if approaching limits
+
+4. Batch Appropriately
+   - Too small (batch=1): Slow, many delays
+   - Too large (batch=100): Might hit rate limits
+   - Sweet spot (batch=3-5): Balance speed and safety
+
+5. Handle Errors
+   - Catch rate limit errors
+   - Implement exponential backoff
+   - Save partial progress
+
+PRODUCTION CONSIDERATIONS:
+-------------------------
+
+For production with many users:
+
+1. Use Paid Tier
+   - Higher limits
+   - More predictable
+   - SLA guarantees
+
+2. Implement Request Queue
+   - Queue document processing
+   - Process in background
+   - Return immediately to user
+
+3. Cache Aggressively
+   - Cache embeddings in database
+   - Cache search results (if queries repeat)
+   - Use CDN for static content
+
+4. Use Local Models
+   - sentence-transformers (open-source)
+   - Run on your hardware
+   - No API limits!
+
+Example Local Model:
+```python
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+embeddings = model.encode(texts)
+# No API calls! ✓
+```
+
+================================================================================
+11. COMPLETE SYSTEM FLOW
+================================================================================
+
+FIRST RUN (Vector Store Creation):
+----------------------------------
+
+```
+USER: python -m src.main
+  ↓
+main.py: print_banner()
+  → Displays system info
+
+  ↓
+main.py: initialize_system(rebuild=False)
+  ↓
+  Check: Does vector store exist?
+  Answer: NO
+  ↓
+  Load documents:
+  data_loader.py: get_sample_documents(limit=5)
+    → Returns 5 documents
+
+  ↓
+  Chunk documents:
+  embeddings.py: chunk_documents(documents)
+    → RecursiveCharacterTextSplitter
+    → 5 documents → 5 chunks (example)
+
+  ↓
+  Create vector store:
+  vector_store.py: create_vector_store(chunks, batch_size=3, delay=2.0)
+    ↓
+    BATCH 1 (3 chunks):
+      → Extract text from chunks
+      → Call Google Embedding API
+      → Receive 3 embeddings (768-dim vectors)
+      → Create FAISS index
+      → Add vectors to index
+      [0.5 seconds]
+
+    ↓ WAIT 2 seconds
+
+    BATCH 2 (2 chunks):
+      → Extract text from chunks
+      → Call Google Embedding API
+      → Receive 2 embeddings
+      → Add vectors to existing index
+      [0.5 seconds]
+
+  ↓
+  Save vector store:
+  vector_store.py: save_vector_store()
+    → Write to data/vector_store/index.faiss
+    → Write to data/vector_store/index.pkl
+
+  ↓
+  Create RAG chain:
+  rag_chain.py: RAGChain(vector_store_manager)
+    → Initialize LLM (Gemini)
+    → Create prompt template
+
+  ↓
+main.py: run_interactive_mode(rag_chain)
+  → Display instructions
+  → Wait for user input
+
+USER: What is Python?
+  ↓
+rag_chain.py: ask("What is Python?")
+  ↓
+  STEP 1 - Retrieve:
+  rag_chain.py: retrieve_context("What is Python?")
+    ↓
+    vector_store.py: similarity_search_with_score("What is Python?", k=3)
+      ↓
+      embeddings.py: embed_query("What is Python?")
+        → Call Google Embedding API
+        → Receive query embedding: [0.12, -0.34, 0.56, ...]
+
+      ↓
+      FAISS: Find k=3 nearest neighbors
+        → Compare query vector to all document vectors
+        → Use approximate nearest neighbor algorithm
+        → Return top 3 matches with scores
+
+      ↓
+      Results:
+      [
+        (Document("Python is a high-level..."), 0.15),
+        (Document("LangChain is a framework..."), 0.52),
+        (Document("Python supports multiple..."), 0.61)
+      ]
+
+    → Return documents (ignore scores)
+
+  ↓
+  STEP 2 - Format:
+  rag_chain.py: format_context(documents)
+    → Extract metadata (source, topic)
+    → Format as:
+      [Source 1: python_basics (Topic: python)]
+      Python is a high-level...
+
+      ---
+
+      [Source 2: langchain_intro (Topic: frameworks)]
+      LangChain is a framework...
+
+  ↓
+  STEP 3 - Generate:
+  rag_chain.py: generate_answer("What is Python?", context)
+    ↓
+    Format prompt:
+      System: You are a helpful AI assistant...
+      Context: [formatted chunks]
+      Human: What is Python?
+
+    ↓
+    Call Gemini API:
+      → Send prompt
+      → Gemini processes context and question
+      → Generates grounded answer
+      → Returns response
+
+    ↓
+    Extract answer text
+
+  ↓
+  STEP 4 - Package:
+  Create result dictionary:
+  {
+    "question": "What is Python?",
+    "answer": "Python is a high-level, interpreted programming language created by Guido van Rossum in 1991. According to Source 1...",
+    "context": [Document objects],
+    "sources": [
+      {"source": "python_basics", "topic": "python", "content": "Python is..."},
+      ...
+    ]
+  }
+
+  ↓
+main.py: rag_chain.display_result(result)
+  → Print formatted output
+  → Show question, answer, sources
+
+  ↓
+main.py: Wait for next question...
+```
+
+SUBSEQUENT RUNS (Vector Store Loading):
+---------------------------------------
+
+```
+USER: python -m src.main
+  ↓
+main.py: initialize_system(rebuild=False)
+  ↓
+  Check: Does vector store exist?
+  Answer: YES
+  ↓
+  Load vector store:
+  vector_store.py: load_vector_store()
+    → Read data/vector_store/index.faiss
+    → Read data/vector_store/index.pkl
+    → Reconstruct FAISS index
+    → Load document metadata
+    [<1 second, NO API CALLS!]
+
+  ↓
+  Create RAG chain
+
+  ↓
+  Ready for questions!
+```
+
+REBUILD SCENARIO:
+----------------
+
+```
+USER (in interactive mode): rebuild
+  ↓
+main.py: initialize_system(rebuild_index=True)
+  ↓
+  Force rebuild: YES
+  ↓
+  Delete old vector store (if exists)
+  ↓
+  Load documents (possibly with updated data)
+  ↓
+  Create new vector store (makes API calls)
+  ↓
+  Save new vector store
+  ↓
+  Continue with new RAG chain
+```
+
+================================================================================
+12. EXTENDING THE SYSTEM
+================================================================================
+
+LOADING REAL DOCUMENTS:
+----------------------
+
+BUILT-IN DOCUMENT LOADER (ALREADY IMPLEMENTED!)
+-----------------------------------------------
+
+The system now includes src/document_loader.py which automatically loads
+your documents from the data/documents/ directory.
+
+Quick Start:
+```bash
+# 1. Add your documents to data/documents/
+cp your-file.txt data/documents/
+
+# 2. Run with --use-documents flag
+python -m src.main --use-documents
+```
+
+What it does:
+- Automatically finds all .txt and .md files in data/documents/
+- Recursively searches subdirectories
+- Extracts metadata (filename, topic, file type)
+- Returns documents in the correct format for the RAG system
+
+Available Functions in src/document_loader.py:
+```python
+from src.document_loader import load_text_files, load_pdfs, load_all_documents
+
+# Load text and markdown files
+documents = load_text_files()  # Defaults to data/documents/
+
+# Load PDFs (requires: pip install pypdf)
+pdf_docs = load_pdfs()  # Defaults to data/documents/pdfs/
+
+# Load everything
+all_docs = load_all_documents(include_pdfs=True)
+```
+
+The system handles this automatically when you use --use-documents flag!
+
+See ADDING_YOUR_DOCUMENTS.md for detailed guide.
+
+ADDITIONAL LOADERS (For Custom Needs):
+--------------------------------------
+
+If you need to load from other sources, here are examples:
+
+1. PDF Documents (Custom):
+
+```python
+# Install: pip install pypdf
+from pypdf import PdfReader
+
+def load_pdfs_from_directory(directory: str) -> List[Dict]:
+    documents = []
+
+    for pdf_path in Path(directory).glob("*.pdf"):
+        reader = PdfReader(str(pdf_path))
+
+        # Extract text from all pages
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+
+        documents.append({
+            "content": text,
+            "metadata": {
+                "source": pdf_path.name,
+                "file_type": "pdf",
+                "num_pages": len(reader.pages)
+            }
+        })
+
+    return documents
+
+# Usage:
+# documents = load_pdfs_from_directory("./data/pdfs")
+```
+
+2. Web Scraping:
+
+```python
+# Install: pip install beautifulsoup4 requests
+import requests
+from bs4 import BeautifulSoup
+
+def scrape_documentation(urls: List[str]) -> List[Dict]:
+    documents = []
+
+    for url in urls:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Extract main content (customize selector!)
+        text = soup.get_text(separator='\n', strip=True)
+
+        documents.append({
+            "content": text,
+            "metadata": {
+                "source": url,
+                "scraped_at": datetime.now().isoformat()
+            }
+        })
+
+    return documents
+
+# Usage:
+# urls = ["https://docs.python.org/3/", ...]
+# documents = scrape_documentation(urls)
+```
+
+3. CSV/Excel Files:
+
+```python
+# Install: pip install pandas
+import pandas as pd
+
+def load_csv(file_path: str, text_column: str) -> List[Dict]:
+    df = pd.read_csv(file_path)
+
+    documents = []
+    for idx, row in df.iterrows():
+        documents.append({
+            "content": row[text_column],
+            "metadata": {
+                "source": f"row_{idx}",
+                "file": file_path,
+                **row.to_dict()  # Include all columns as metadata
+            }
+        })
+
+    return documents
+
+# Usage:
+# documents = load_csv("data/articles.csv", text_column="content")
+```
+
+ADDING CONVERSATION MEMORY:
+--------------------------
+
+Track conversation history for context:
+
+```python
+class RAGChainWithMemory:
+    def __init__(self, vector_store_manager: VectorStoreManager):
+        self.vector_store_manager = vector_store_manager
+        self.llm = ChatGoogleGenerativeAI(...)
+        self.conversation_history = []  # New!
+
+    def ask(self, question: str) -> Dict:
+        # Retrieve context (same as before)
+        documents = self.retrieve_context(question)
+        context = self.format_context(documents)
+
+        # Add conversation history to prompt
+        history_text = self.format_history()
+
+        # Modified prompt
+        prompt = f"""Previous conversation:
+{history_text}
+
+Current context:
+{context}
+
+Current question: {question}"""
+
+        # Generate answer
+        answer = self.generate_answer(prompt)
+
+        # Save to history
+        self.conversation_history.append({
+            "question": question,
+            "answer": answer
+        })
+
+        return {"question": question, "answer": answer, ...}
+
+    def format_history(self) -> str:
+        if not self.conversation_history:
+            return "No previous conversation."
+
+        history = []
+        for turn in self.conversation_history[-3:]:  # Last 3 turns
+            history.append(f"Q: {turn['question']}\nA: {turn['answer']}")
+
+        return "\n\n".join(history)
+```
+
+ADDING RE-RANKING:
+-----------------
+
+Improve retrieval quality by re-ranking results:
+
+```python
+# Install: pip install sentence-transformers
+from sentence_transformers import CrossEncoder
+
+class RAGChainWithReranking:
+    def __init__(self, vector_store_manager: VectorStoreManager):
+        self.vector_store_manager = vector_store_manager
+        self.llm = ChatGoogleGenerativeAI(...)
+
+        # Cross-encoder for re-ranking
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+
+    def retrieve_context(self, query: str, k: int = 10) -> List[Document]:
+        # Retrieve more candidates than needed
+        results = self.vector_store_manager.similarity_search_with_score(
+            query, k=k
+        )
+        documents = [doc for doc, score in results]
+
+        # Re-rank using cross-encoder
+        pairs = [[query, doc.page_content] for doc in documents]
+        scores = self.reranker.predict(pairs)
+
+        # Sort by re-ranking scores
+        ranked_docs = sorted(
+            zip(documents, scores),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # Return top 3 after re-ranking
+        return [doc for doc, score in ranked_docs[:3]]
+```
+
+Why re-ranking?
+  - Initial retrieval (FAISS): Fast but approximate
+  - Re-ranking: Slower but more accurate
+  - Best of both worlds: Fast filtering + accurate final selection
+
+ADDING FILTERS:
+--------------
+
+Filter documents by metadata:
+
+```python
+def retrieve_context_with_filter(
+    self,
+    query: str,
+    topic: str = None,
+    date_after: str = None
+) -> List[Document]:
+    # Retrieve candidates
+    all_results = self.vector_store_manager.similarity_search_with_score(
+        query, k=20
+    )
+
+    # Filter by metadata
+    filtered = []
+    for doc, score in all_results:
+        # Check topic filter
+        if topic and doc.metadata.get("topic") != topic:
+            continue
+
+        # Check date filter
+        if date_after and doc.metadata.get("date") < date_after:
+            continue
+
+        filtered.append((doc, score))
+
+    # Return top 3 after filtering
+    documents = [doc for doc, score in filtered[:3]]
+    return documents
+
+# Usage:
+# retrieve_context_with_filter("What is ML?", topic="machine_learning")
+```
+
+ADDING STREAMING:
+----------------
+
+Stream LLM responses for better UX:
+
+```python
+def ask_with_streaming(self, question: str):
+    # Retrieve and format context (same as before)
+    documents = self.retrieve_context(question)
+    context = self.format_context(documents)
+
+    # Format prompt
+    messages = self.prompt_template.format_messages(
+        context=context,
+        question=question
+    )
+
+    # Stream response
+    print("\n💡 Answer: ", end="", flush=True)
+
+    full_answer = ""
+    for chunk in self.llm.stream(messages):
+        token = chunk.content
+        print(token, end="", flush=True)
+        full_answer += token
+
+    print("\n")
+
+    return {"question": question, "answer": full_answer, ...}
+```
+
+Why streaming?
+  - Better UX: User sees response as it's generated
+  - Lower perceived latency
+  - Can cancel if answer goes wrong direction
+
+ADDING WEB API:
+--------------
+
+Create FastAPI endpoint:
+
+```python
+# Install: pip install fastapi uvicorn
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# Global RAG chain (initialize once)
+rag_chain = None
+
+@app.on_event("startup")
+def startup():
+    global rag_chain
+    embedding_manager = EmbeddingManager()
+    vector_store_manager = VectorStoreManager(embedding_manager)
+    vector_store_manager.load_vector_store()
+    rag_chain = RAGChain(vector_store_manager)
+
+class Question(BaseModel):
+    question: str
+
+@app.post("/ask")
+def ask_question(q: Question):
+    result = rag_chain.ask(q.question)
+    return result
+
+# Run with: uvicorn api:app --reload
+```
+
+Usage:
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is Python?"}'
+```
+
+================================================================================
+13. TROUBLESHOOTING & BEST PRACTICES
+================================================================================
+
+COMMON ISSUES:
+-------------
+
+1. "API key not valid"
+   Problem: Wrong or missing API key
+   Solutions:
+   - Check .env file has correct key
+   - Verify key from Google AI Studio
+   - Ensure no extra spaces in .env
+   - Restart terminal after changing .env
+
+2. "Quota exceeded"
+   Problem: Hit rate limits
+   Solutions:
+   - Wait for quota to reset (midnight Pacific time)
+   - Reduce doc_limit
+   - Increase delay between batches
+   - Use cached vector store (don't rebuild)
+   - Consider paid tier
+
+3. "No module named 'src'"
+   Problem: Wrong working directory or import path
+   Solutions:
+   - Run from project root: python -m src.main
+   - Don't run: python src/main.py
+   - Check PYTHONPATH
+
+4. "Vector store not found"
+   Problem: First run or data folder missing
+   Solutions:
+   - Normal on first run (will create automatically)
+   - Check data/ folder exists
+   - Don't use --rebuild unnecessarily
+
+5. "Poor retrieval quality"
+   Problem: Retrieved chunks not relevant
+   Solutions:
+   - Check chunk_size (too large or too small?)
+   - Verify documents are well-formatted
+   - Try different embedding model
+   - Add re-ranking
+   - Increase top_k (retrieve more chunks)
+
+6. "Hallucinated answers"
+   Problem: LLM making things up
+   Solutions:
+   - Strengthen prompt ("Use ONLY...")
+   - Add examples to prompt
+   - Check retrieved context is relevant
+   - Lower temperature
+   - Add source citation requirements
+
+BEST PRACTICES:
+--------------
+
+1. Development Workflow:
+   ```
+   a. Start with 2-3 documents
+   b. Verify chunking looks good
+   c. Test retrieval with sample questions
+   d. Check LLM responses are grounded
+   e. Scale up to full dataset
+   ```
+
+2. Prompt Engineering:
+   - Be explicit about grounding requirements
+   - Provide examples of good answers
+   - Specify output format
+   - Test with edge cases (no relevant docs)
+
+3. Chunk Size Selection:
+   ```
+   Document Type           Recommended Chunk Size
+   -------------------     ----------------------
+   Short paragraphs        500-800 characters
+   Long articles           1000-1500 characters
+   Technical docs          800-1200 characters
+   Chat messages           200-500 characters
+   ```
+
+4. Vector Store Management:
+   - Save after creation (don't lose work)
+   - Version indices (index_v1/, index_v2/)
+   - Rebuild when:
+     * Documents change
+     * Embedding model changes
+     * Chunk strategy changes
+   - Don't rebuild unnecessarily
+
+5. Monitoring:
+   - Log all queries and responses
+   - Track retrieval quality
+   - Monitor API usage
+   - A/B test prompt changes
+
+6. Security:
+   - Never commit .env to git
+   - Use .gitignore for .env
+   - Rotate API keys regularly
+   - Validate user inputs
+   - Sanitize file paths
+
+7. Performance:
+   - Cache frequently asked questions
+   - Use smaller models for embeddings if possible
+   - Consider GPU acceleration for local models
+   - Batch document processing
+
+8. Testing:
+   - Unit tests for each component
+   - Integration tests for full pipeline
+   - Test with edge cases:
+     * Empty queries
+     * Very long queries
+     * Out-of-scope questions
+     * Malformed inputs
+
+EXAMPLE TEST CASES:
+------------------
+
+```python
+def test_retrieval_quality():
+    # Test 1: Should find relevant docs
+    results = rag_chain.ask("What is Python?")
+    assert "python" in results["answer"].lower()
+    assert len(results["sources"]) > 0
+
+    # Test 2: Should handle no relevant docs
+    results = rag_chain.ask("What is the capital of France?")
+    assert "don't have" in results["answer"].lower() or \
+           "not found" in results["answer"].lower()
+
+    # Test 3: Should cite sources
+    results = rag_chain.ask("What is machine learning?")
+    assert any("source" in str(s).lower() for s in results["sources"])
+```
+
+DEBUGGING TIPS:
+--------------
+
+1. Print Retrieved Chunks:
+   ```python
+   documents = rag_chain.retrieve_context(query)
+   for i, doc in enumerate(documents):
+       print(f"\n--- Chunk {i+1} ---")
+       print(doc.page_content)
+       print(f"Score: {score}")  # If using similarity_search_with_score
+   ```
+
+2. Inspect Embeddings:
+   ```python
+   embedding = embedding_manager.generate_query_embedding("test query")
+   print(f"Embedding dimension: {len(embedding)}")
+   print(f"First 10 values: {embedding[:10]}")
+   ```
+
+3. Test Prompt Templates:
+   ```python
+   messages = prompt_template.format_messages(
+       context="Test context",
+       question="Test question"
+   )
+   print(messages)
+   # Verify format looks correct before sending to LLM
+   ```
+
+4. Check Token Counts:
+   ```python
+   # Rough estimate: 1 token ≈ 4 characters
+   prompt_text = str(messages)
+   estimated_tokens = len(prompt_text) // 4
+   print(f"Estimated tokens: {estimated_tokens}")
+   ```
+
+PERFORMANCE OPTIMIZATION:
+------------------------
+
+1. Reduce Embedding Calls:
+   - Cache embeddings in database
+   - Reuse embeddings when possible
+   - Batch embed multiple texts at once
+
+2. Faster Retrieval:
+   - Use smaller k (retrieve fewer chunks)
+   - Use FAISS IVF index for large datasets
+   - Pre-filter by metadata before semantic search
+
+3. Faster LLM:
+   - Use smaller models (flash vs. pro)
+   - Reduce max_output_tokens
+   - Use caching for common queries
+
+4. Parallel Processing:
+   ```python
+   from concurrent.futures import ThreadPoolExecutor
+
+   def process_document(doc):
+       chunks = chunk_documents([doc])
+       return chunks
+
+   with ThreadPoolExecutor() as executor:
+       all_chunks = list(executor.map(process_document, documents))
+   ```
+
+================================================================================
+CONCLUSION
+================================================================================
+
+WHAT YOU'VE LEARNED:
+--------------------
+
+1. RAG Fundamentals:
+   - What RAG is and why it's useful
+   - The complete RAG pipeline
+   - When to use RAG vs. fine-tuning
+
+2. Key Technologies:
+   - Embeddings and vector representations
+   - Vector databases (FAISS)
+   - LLMs and prompt engineering
+   - LangChain framework
+
+3. Implementation:
+   - Configuration management
+   - Document loading and chunking
+   - Embedding generation
+   - Vector store operations
+   - RAG pipeline orchestration
+   - CLI interface design
+
+4. Advanced Topics:
+   - Rate limiting strategies
+   - Caching and optimization
+   - Extending with new features
+   - Production considerations
+
+5. Best Practices:
+   - Development workflow
+   - Testing strategies
+   - Debugging techniques
+   - Performance optimization
+
+NEXT STEPS:
+----------
+
+1. Experiment:
+   - Try different chunk sizes
+   - Test various prompts
+   - Load your own documents
+   - Adjust top_k values
+
+2. Extend:
+   - Add conversation memory
+   - Implement re-ranking
+   - Create web API
+   - Build UI (Streamlit, Gradio)
+
+3. Learn More:
+   - LangChain documentation
+   - Google Gemini API docs
+   - FAISS advanced features
+   - RAG research papers
+
+4. Build:
+   - Customer support chatbot
+   - Documentation Q&A system
+   - Personal knowledge base
+   - Research assistant
+
+RESOURCES:
+---------
+
+Documentation:
+- LangChain: https://python.langchain.com/
+- Google AI: https://ai.google.dev/
+- FAISS: https://github.com/facebookresearch/faiss
+
+Learning:
+- RAG Paper: https://arxiv.org/abs/2005.11401
+- Prompt Engineering: https://www.promptingguide.ai/
+- Vector Databases: https://www.pinecone.io/learn/
+
+Community:
+- LangChain Discord
+- r/MachineLearning
+- Hugging Face Forums
+
+FINAL THOUGHTS:
+--------------
+
+RAG is a powerful technique for:
+- Grounding LLM responses in your data
+- Reducing hallucinations
+- Enabling source attribution
+- Keeping information up-to-date
+
+This POC provides a solid foundation. The patterns and principles you've learned
+here scale to production systems handling millions of documents.
+
+Key takeaways:
+1. Start simple, iterate quickly
+2. Test thoroughly at each step
+3. Monitor and measure everything
+4. User feedback is invaluable
+
+Happy building! 🚀
+
+================================================================================
+END OF TUTORIAL
+================================================================================

@@ -1,0 +1,29 @@
+================================================================================
+                    ⚠️  NOTICE: FILE SUPERSEDED
+================================================================================
+
+This file has been replaced by a more complete and up-to-date version.
+
+Please refer to:
+
+    📘 COMPLETE_RAG_TUTORIAL.txt
+
+The new tutorial includes:
+  ✅ Complete implementation guide
+  ✅ Updated with document_loader.py
+  ✅ Instructions for loading your own documents
+  ✅ All code examples and explanations
+  ✅ Troubleshooting and best practices
+  ✅ Extension examples
+
+This file is kept for reference but is INCOMPLETE.
+
+================================================================================
+
+For a quick guide on adding your own documents, see:
+    📄 ADDING_YOUR_DOCUMENTS.md
+
+For document placement guidelines, see:
+    📁 data/documents/README.md
+
+================================================================================
