@@ -8,6 +8,7 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 
 ## Features
 
+### Core RAG Features
 - **Ultra-Fast LLM**: Powered by Groq API with Llama 3.3 70B (10-100x faster than traditional APIs)
 - **Free Local Embeddings**: HuggingFace sentence-transformers (no API costs)
 - **Modern Web UI**: Streamlit-based chat interface with document upload
@@ -15,6 +16,14 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - **Source Attribution**: View retrieved context and sources for each answer
 - **Configurable Settings**: Adjust temperature, top-k results, and chunking parameters
 - **FAISS Vector Store**: Fast similarity search with local caching
+
+### 🆕 Phase 3: Agent Features (NEW!)
+- **🧠 Memory System**: Conversation memory + episodic memory across sessions
+- **🔍 Multi-Tool Agent**: 6 specialized tools (documents, web, calculator, code, files, document manager)
+- **📊 Self-Reflection**: Agent evaluates its own decisions and learns from mistakes
+- **🎯 Intelligent Routing**: Automatically selects the best tool for each query
+- **📈 Performance Tracking**: Success rates, tool rankings, and quality metrics
+- **💡 Context-Aware**: Remembers conversation history and builds on previous interactions
 
 ## Quick Start
 
@@ -48,29 +57,79 @@ EMBEDDING_PROVIDER=huggingface
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
-### 4. Launch the UI
+### 4. Choose Your Interface
+
+#### Option A: Basic RAG UI (Simple Document Q&A)
 
 ```bash
 streamlit run run_ui.py
 ```
 
-Or use the launcher scripts:
-
-**Mac/Linux:**
+Or use launcher scripts:
 ```bash
-./launch_ui.sh
+./launch_ui.sh           # Mac/Linux
+launch_ui.bat            # Windows
 ```
 
-**Windows:**
+#### Option B: 🆕 **Agent UI with Phase 3 Features** (Recommended)
+
+Enhanced interface with memory, self-reflection, and multi-tool capabilities:
+
 ```bash
-launch_ui.bat
+streamlit run run_agent_ui.py
 ```
+
+Or use launcher scripts:
+```bash
+./launch_agent_ui.sh     # Mac/Linux
+launch_agent_ui.bat      # Windows
+```
+
+**New in Agent UI:**
+- 🧠 Memory system (remembers conversations)
+- 🔍 6 specialized tools (documents, web, calculator, code, files)
+- 📊 Self-reflection and learning
+- 🎯 Intelligent tool routing
+- 📈 Performance tracking
+
+See [Agent UI Guide](AGENT_UI_GUIDE.md) for detailed features.
 
 The app will open at [http://localhost:8501](http://localhost:8501)
 
 ## Usage
 
-### Chat Interface
+### Two Interfaces Available
+
+#### Basic RAG UI (`run_ui.py`)
+- Simple document Q&A interface
+- Best for: Quick document queries, simple RAG usage
+- Features: Document search only
+
+#### 🆕 Agent UI (`run_agent_ui.py`) - **Recommended**
+- Intelligent multi-tool agent with memory
+- Best for: Complex queries, multi-turn conversations, learning over time
+- Features: 6 tools + memory + self-reflection
+
+### Agent UI Usage
+
+1. **Start a conversation** - The agent will remember context
+2. **Ask anything:**
+   - Document questions: "What is RAG?"
+   - Math: "Calculate 15% of $2500"
+   - Code: "Write Python code to sort a list"
+   - Web: "Latest AI news"
+   - Files: "List files in current directory"
+3. **Enable/Disable features** in sidebar:
+   - Memory (conversation + episodic)
+   - Self-Reflection (learning & improvement)
+4. **View insights:**
+   - Agent reasoning (tool selection)
+   - Memory context
+   - Performance stats
+
+See [Agent UI Guide](AGENT_UI_GUIDE.md) for comprehensive usage instructions.
+
+### Basic UI Usage
 
 1. Select **Sample Documents** mode to try with example documents
 2. Ask questions like:
@@ -175,10 +234,16 @@ EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
 ## Documentation
 
-- [UI Guide](UI_GUIDE.md) - Comprehensive UI feature guide
+### User Guides
+- [Agent UI Guide](AGENT_UI_GUIDE.md) - **NEW!** Phase 3 agent features and usage
+- [UI Guide](UI_GUIDE.md) - Basic UI feature guide
+- [Adding Documents](ADDING_YOUR_DOCUMENTS.md) - Document processing guide
+
+### Technical Documentation
+- [Phase 3 Complete](PHASE3_COMPLETE.md) - Phase 3 implementation summary
+- [Phase 3 Design](PHASE3_DESIGN.md) - Phase 3 architecture and design
 - [Project Overview](PROJECT_OVERVIEW.md) - Technical architecture
 - [Groq Migration](GROQ_MIGRATION_SUMMARY.md) - Groq API setup details
-- [Adding Documents](ADDING_YOUR_DOCUMENTS.md) - Document processing guide
 
 ## Deployment
 
