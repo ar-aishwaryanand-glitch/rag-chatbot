@@ -43,6 +43,9 @@ env/
 # Vector Store Data (can be rebuilt)
 data/vector_store/
 
+# Episodic Memory (runtime session data)
+data/episodic_memory/
+
 # Uploaded Documents (user data)
 data/uploaded/*
 !data/uploaded/.gitkeep
