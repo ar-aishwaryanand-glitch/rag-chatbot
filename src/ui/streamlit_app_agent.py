@@ -260,7 +260,11 @@ def render_agent_sidebar():
 
                     status.update(label="Re-indexing vector store...")
 
-                    # Force re-index by clearing cache and reinitializing
+                    # Force rebuild of vector store with new documents
+                    from src.main import initialize_system
+                    rag_chain = initialize_system(rebuild_index=True, use_documents=True)
+
+                    # Clear cache and reinitialize agent with new vector store
                     st.cache_resource.clear()
                     st.session_state.agent = None
                     st.session_state.agent_initialized = False
