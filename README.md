@@ -17,13 +17,20 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - **Configurable Settings**: Adjust temperature, top-k results, and chunking parameters
 - **FAISS Vector Store**: Fast similarity search with local caching
 
-### 🆕 Phase 3: Agent Features (NEW!)
+### 🆕 Phase 3: Agent Features
 - **🧠 Memory System**: Conversation memory + episodic memory across sessions
-- **🔍 Multi-Tool Agent**: 6 specialized tools (documents, web, calculator, code, files, document manager)
+- **🔍 Multi-Tool Agent**: 7 specialized tools (documents, web, calculator, code, files, document manager, web agent)
 - **📊 Self-Reflection**: Agent evaluates its own decisions and learns from mistakes
 - **🎯 Intelligent Routing**: Automatically selects the best tool for each query
 - **📈 Performance Tracking**: Success rates, tool rankings, and quality metrics
 - **💡 Context-Aware**: Remembers conversation history and builds on previous interactions
+
+### 🌟 Phase 4: Web Agent (NEW!)
+- **🌐 Autonomous Web Browsing**: Visit websites and extract clean content
+- **📄 Article Extraction**: Get main content without ads/navigation
+- **🔗 Multi-Source Synthesis**: Research across multiple URLs with citations
+- **⚡ JavaScript Support**: Handle modern dynamic websites
+- **📊 Structured Summaries**: Markdown output with proper source attribution
 
 ## Quick Start
 
@@ -87,7 +94,8 @@ launch_agent_ui.bat      # Windows
 
 **New in Agent UI:**
 - 🧠 Memory system (remembers conversations)
-- 🔍 6 specialized tools (documents, web, calculator, code, files)
+- 🔍 7 specialized tools (documents, web search, **web agent**, calculator, code, files)
+- 🌐 **Autonomous web browsing** - visits URLs and extracts content
 - 📊 Self-reflection and learning
 - 🎯 Intelligent tool routing
 - 📈 Performance tracking
@@ -107,17 +115,18 @@ The app will open at [http://localhost:8501](http://localhost:8501)
 
 #### 🆕 Agent UI (`run_agent_ui.py`) - **Recommended**
 - Intelligent multi-tool agent with memory
-- Best for: Complex queries, multi-turn conversations, learning over time
-- Features: 6 tools + memory + self-reflection
+- Best for: Complex queries, multi-turn conversations, web research, learning over time
+- Features: 7 tools + memory + self-reflection + web agent
 
 ### Agent UI Usage
 
 1. **Start a conversation** - The agent will remember context
 2. **Ask anything:**
    - Document questions: "What is RAG?"
+   - Web research: "Visit https://openai.com/research and extract the main content"
+   - Multi-source: "Research AI safety from OpenAI, Anthropic, and DeepMind websites"
    - Math: "Calculate 15% of $2500"
    - Code: "Write Python code to sort a list"
-   - Web: "Latest AI news"
    - Files: "List files in current directory"
 3. **Enable/Disable features** in sidebar:
    - Memory (conversation + episodic)
@@ -240,6 +249,7 @@ EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 - [Adding Documents](ADDING_YOUR_DOCUMENTS.md) - Document processing guide
 
 ### Technical Documentation
+- [Phase 4: Web Agent](PHASE4_WEBAGENT.md) - **NEW!** Autonomous web browsing
 - [Phase 3 Complete](PHASE3_COMPLETE.md) - Phase 3 implementation summary
 - [Phase 3 Design](PHASE3_DESIGN.md) - Phase 3 architecture and design
 - [Project Overview](PROJECT_OVERVIEW.md) - Technical architecture

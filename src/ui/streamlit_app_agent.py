@@ -35,7 +35,8 @@ from src.agent.tools import (
     CalculatorTool,
     CodeExecutorTool,
     FileOpsTool,
-    DocumentManagementTool
+    DocumentManagementTool,
+    WebAgentTool
 )
 
 
@@ -98,6 +99,7 @@ def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool 
     tools_to_register = [
         RAGTool(rag_chain),
         WebSearchTool(max_results=3),
+        WebAgentTool(timeout=30, max_pages=5),  # NEW: Phase 4 Web Agent
         CalculatorTool(),
         CodeExecutorTool(timeout=10),
         FileOpsTool(Config.FILE_OPS_WORKSPACE),
@@ -434,7 +436,8 @@ def render_welcome_message_agent():
     I'm an **intelligent agent** powered by:
     - 🧠 **Memory**: I remember our conversations and learn from them
     - 🔍 **Self-Reflection**: I evaluate my actions and improve over time
-    - 🛠️ **Multi-Tool Capabilities**: I can search documents, web, calculate, execute code, and more
+    - 🛠️ **Multi-Tool Capabilities**: I can search documents, browse web pages, calculate, execute code, and more
+    - 🌐 **Web Agent**: I can autonomously visit websites and extract structured information
 
     ### 🚀 What Makes Me Special (Phase 3)?
 
@@ -445,10 +448,11 @@ def render_welcome_message_agent():
 
     ### 💬 Try Asking Me:
     - "What is RAG and how does it work?"
+    - "Visit https://openai.com/research and extract the main content"
     - "Calculate the compound interest on $10,000 at 5% for 3 years"
     - "Write Python code to sort a list"
+    - "Extract and summarize information from https://techcrunch.com"
     - "What documents are indexed?"
-    - "Search the web for recent AI news"
 
     ### ⚙️ Customize My Behavior:
     - Toggle **Memory** and **Self-Reflection** in the sidebar

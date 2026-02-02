@@ -7,6 +7,7 @@ from .calculator_tool import CalculatorTool
 from .code_executor_tool import CodeExecutorTool
 from .file_ops_tool import FileOpsTool
 from .doc_management_tool import DocumentManagementTool
+from .web_agent_tool import WebAgentTool
 
 __all__ = [
     'BaseTool',
@@ -17,4 +18,5 @@ __all__ = [
     'CodeExecutorTool',
     'FileOpsTool',
     'DocumentManagementTool',
+    'WebAgentTool',
 ]

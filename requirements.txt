@@ -35,6 +35,12 @@ duckduckgo-search>=3.8.0  # Free web search
 numexpr>=2.8.0  # Safe math evaluation for calculator
 RestrictedPython>=6.0  # Sandboxed code execution
 
+# Web Agent Tool (Phase 4)
+playwright>=1.40.0  # Browser automation for web agent
+beautifulsoup4>=4.12.0  # HTML parsing
+readability-lxml>=0.8.1  # Article content extraction
+lxml>=4.9.0  # XML/HTML processing (required by readability)
+
 # ===== INSTALL INSTRUCTIONS =====
 # If you get build errors, try:
 # pip install --upgrade pip setuptools wheel
