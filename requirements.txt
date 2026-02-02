@@ -26,6 +26,15 @@ faiss-cpu>=1.7.0  # Lightweight alternative, no compilation needed
 # UI Framework
 streamlit>=1.30.0  # Web-based UI for RAG system
 
+# Agent Framework
+langgraph>=0.0.20  # Agent orchestration with state graphs
+langgraph-checkpoint>=1.0.2  # Checkpointing for agents
+
+# Agent Tools
+duckduckgo-search>=3.8.0  # Free web search
+numexpr>=2.8.0  # Safe math evaluation for calculator
+RestrictedPython>=6.0  # Sandboxed code execution
+
 # ===== INSTALL INSTRUCTIONS =====
 # If you get build errors, try:
 # pip install --upgrade pip setuptools wheel

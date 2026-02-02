@@ -46,6 +46,41 @@ class Config:
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
     LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "1024"))
 
+    # ===== AGENT CONFIGURATION =====
+
+    # Agent Mode
+    AGENT_ENABLED = os.getenv("AGENT_ENABLED", "true").lower() == "true"
+    AGENT_MODE = os.getenv("AGENT_MODE", "hybrid")  # react, plan-execute, hybrid
+    AGENT_MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "10"))
+    AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "120"))  # seconds
+    AGENT_VERBOSE = os.getenv("AGENT_VERBOSE", "true").lower() == "true"
+
+    # Memory Configuration
+    MEMORY_ENABLED = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
+    MEMORY_WINDOW_SIZE = int(os.getenv("MEMORY_WINDOW_SIZE", "10"))
+    MEMORY_SUMMARY_FREQUENCY = int(os.getenv("MEMORY_SUMMARY_FREQUENCY", "5"))
+    MEMORY_STORE_PATH = Path(__file__).parent.parent / "data" / "memory_store"
+
+    # Tool Configuration
+    WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH_ENABLED", "true").lower() == "true"
+    WEB_SEARCH_PROVIDER = os.getenv("WEB_SEARCH_PROVIDER", "duckduckgo")  # duckduckgo or tavily
+    TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")  # Optional
+
+    CALCULATOR_ENABLED = os.getenv("CALCULATOR_ENABLED", "true").lower() == "true"
+    CODE_EXECUTOR_ENABLED = os.getenv("CODE_EXECUTOR_ENABLED", "false").lower() == "true"  # Disabled by default for safety
+    FILE_OPS_ENABLED = os.getenv("FILE_OPS_ENABLED", "true").lower() == "true"
+
+    # Safety Settings
+    CODE_EXECUTION_TIMEOUT = int(os.getenv("CODE_EXECUTION_TIMEOUT", "5"))
+    FILE_OPS_WORKSPACE = Path(__file__).parent.parent / "data" / "workspace"
+
+    # Reflection & Self-Correction
+    REFLECTION_ENABLED = os.getenv("REFLECTION_ENABLED", "true").lower() == "true"
+    HALLUCINATION_DETECTION = os.getenv("HALLUCINATION_DETECTION", "false").lower() == "true"
+
+    # Streaming
+    ENABLE_STREAMING = os.getenv("ENABLE_STREAMING", "true").lower() == "true"
+
     @classmethod
     def validate(cls):
         """Validate that required configuration is present."""
