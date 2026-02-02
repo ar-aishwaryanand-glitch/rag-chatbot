@@ -99,12 +99,20 @@ def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool 
     tools_to_register = [
         RAGTool(rag_chain),
         WebSearchTool(max_results=3),
-        WebAgentTool(timeout=30, max_pages=5),  # NEW: Phase 4 Web Agent
         CalculatorTool(),
         CodeExecutorTool(timeout=10),
         FileOpsTool(Config.FILE_OPS_WORKSPACE),
         DocumentManagementTool(vector_store_manager)
     ]
+
+    # Add Web Agent only if Playwright is available (not on Streamlit Cloud)
+    try:
+        web_agent = WebAgentTool(timeout=30, max_pages=5)
+        if web_agent.available:
+            tools_to_register.append(web_agent)
+    except Exception as e:
+        # Playwright not available - skip web agent (expected on Streamlit Cloud)
+        pass
 
     for tool in tools_to_register:
         tool_registry.register(tool)
