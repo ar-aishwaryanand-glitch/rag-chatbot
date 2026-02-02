@@ -4,9 +4,50 @@ from pathlib import Path
 from typing import List, Dict
 import os
 
+def load_docx_file(file_path: Path) -> str:
+    """
+    Load content from a DOCX file.
+
+    Args:
+        file_path: Path to DOCX file
+
+    Returns:
+        Extracted text content
+    """
+    try:
+        from docx import Document
+    except ImportError:
+        raise ImportError("python-docx not installed. Run: pip install python-docx")
+
+    doc = Document(str(file_path))
+    text = "\n\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+    return text
+
+
+def load_pdf_file(file_path: Path) -> str:
+    """
+    Load content from a PDF file.
+
+    Args:
+        file_path: Path to PDF file
+
+    Returns:
+        Extracted text content
+    """
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        raise ImportError("pypdf not installed. Run: pip install pypdf")
+
+    reader = PdfReader(str(file_path))
+    text = "\n\n".join([page.extract_text() for page in reader.pages])
+    return text
+
+
 def load_text_files(directory: str = None) -> List[Dict[str, str]]:
     """
-    Load all .txt and .md files from a directory.
+    Load all supported document files from a directory.
+    Supports: .txt, .md, .pdf, .docx
 
     Args:
         directory: Path to documents directory.
@@ -27,19 +68,32 @@ def load_text_files(directory: str = None) -> List[Dict[str, str]]:
 
     documents = []
 
-    # Find all text and markdown files
-    text_files = list(directory.glob("**/*.txt")) + list(directory.glob("**/*.md"))
+    # Find all supported file types
+    all_files = (
+        list(directory.glob("**/*.txt")) +
+        list(directory.glob("**/*.md")) +
+        list(directory.glob("**/*.pdf")) +
+        list(directory.glob("**/*.docx"))
+    )
 
-    if not text_files:
-        print(f"⚠️  Warning: No .txt or .md files found in {directory}")
+    if not all_files:
+        print(f"⚠️  Warning: No supported files found in {directory}")
         return []
 
-    print(f"📂 Found {len(text_files)} document(s)")
+    print(f"📂 Found {len(all_files)} document(s)")
 
-    for file_path in text_files:
+    for file_path in all_files:
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # Load content based on file type
+            if file_path.suffix in ['.txt', '.md']:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            elif file_path.suffix == '.pdf':
+                content = load_pdf_file(file_path)
+            elif file_path.suffix == '.docx':
+                content = load_docx_file(file_path)
+            else:
+                continue
 
             # Extract topic from filename or parent directory
             topic = file_path.stem.lower().replace('-', '_').replace(' ', '_')

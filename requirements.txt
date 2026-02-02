@@ -41,6 +41,10 @@ beautifulsoup4>=4.12.0  # HTML parsing
 readability-lxml>=0.8.1  # Article content extraction
 lxml>=4.9.0  # XML/HTML processing (required by readability)
 
+# Document Upload Support (Phase 4+)
+pypdf>=3.17.0  # PDF file parsing
+python-docx>=1.0.0  # DOCX file parsing
+
 # ===== INSTALL INSTRUCTIONS =====
 # If you get build errors, try:
 # pip install --upgrade pip setuptools wheel

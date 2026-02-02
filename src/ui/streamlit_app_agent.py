@@ -220,6 +220,52 @@ def render_agent_sidebar():
 
     st.sidebar.markdown("---")
 
+    # Document Upload Section
+    st.sidebar.subheader("📁 Upload Documents")
+
+    uploaded_files = st.sidebar.file_uploader(
+        "Upload documents to index",
+        type=['txt', 'md', 'pdf', 'docx'],
+        accept_multiple_files=True,
+        help="Upload .txt, .md, .pdf, or .docx files to add to the knowledge base"
+    )
+
+    if uploaded_files:
+        if st.sidebar.button("📤 Process & Index", use_container_width=True):
+            with st.sidebar.status("Processing documents...") as status:
+                try:
+                    from pathlib import Path
+                    import shutil
+
+                    # Create documents directory if it doesn't exist
+                    docs_dir = Path("data/documents")
+                    docs_dir.mkdir(parents=True, exist_ok=True)
+
+                    saved_files = []
+                    for uploaded_file in uploaded_files:
+                        # Save file
+                        file_path = docs_dir / uploaded_file.name
+                        with open(file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        saved_files.append(uploaded_file.name)
+                        status.update(label=f"Saved {uploaded_file.name}...")
+
+                    status.update(label="Re-indexing vector store...")
+
+                    # Force re-index by clearing cache and reinitializing
+                    st.cache_resource.clear()
+                    st.session_state.agent = None
+                    st.session_state.agent_initialized = False
+
+                    status.update(label="✅ Upload complete!", state="complete")
+                    st.sidebar.success(f"Uploaded {len(saved_files)} file(s):\n" + "\n".join(f"• {f}" for f in saved_files))
+                    st.rerun()
+
+                except Exception as e:
+                    st.sidebar.error(f"Upload failed: {str(e)}")
+
+    st.sidebar.markdown("---")
+
     # Clear Chat
     if st.sidebar.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
