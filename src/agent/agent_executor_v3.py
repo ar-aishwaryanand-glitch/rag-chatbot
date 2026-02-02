@@ -251,13 +251,40 @@ Response:"""
                 urls = re.findall(url_pattern, query)
 
                 if urls:
+                    # URLs provided directly in query
                     if len(urls) == 1:
                         result = tool.run_tool(url=urls[0])
                     else:
                         result = tool.run_tool(urls=urls)
                 else:
-                    # No URLs found - ask LLM to extract or guide user
-                    result = tool.run_tool(url=None)
+                    # No URLs found - perform web search first to get URLs
+                    search_tool = self.tool_registry.get_tool("web_search")
+                    if search_tool:
+                        # Search for URLs
+                        search_result = search_tool.run(query=query)
+
+                        if search_result.success:
+                            # Extract URLs from search results
+                            search_urls = re.findall(url_pattern, search_result.output)
+
+                            if search_urls:
+                                # Limit to top 3 URLs
+                                search_urls = search_urls[:3]
+                                result = tool.run_tool(urls=search_urls)
+                            else:
+                                # No URLs found in search results
+                                result = search_result  # Return search results as fallback
+                        else:
+                            result = search_result  # Return search error
+                    else:
+                        # web_search not available
+                        from .base_tool import ToolResult
+                        result = ToolResult(
+                            success=False,
+                            output="",
+                            error="web_agent requires URLs. Please provide URLs or enable web_search tool.",
+                            duration=0
+                        )
 
             else:  # document_search
                 result = tool.run(query=query)
