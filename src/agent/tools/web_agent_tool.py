@@ -10,13 +10,14 @@ This tool enables the agent to:
 """
 
 import asyncio
+import time
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlparse
 import re
 
-from .base_tool import Tool, ToolResult
+from .base_tool import BaseTool, ToolResult
 
 # Optional imports with fallbacks
 try:
@@ -65,7 +66,7 @@ class WebPage:
         }
 
 
-class WebAgentTool(Tool):
+class WebAgentTool(BaseTool):
     """
     Autonomous web browsing and content extraction tool.
 
@@ -90,14 +91,7 @@ class WebAgentTool(Tool):
             timeout: Page load timeout in seconds
             max_pages: Maximum number of pages to visit in one operation
         """
-        super().__init__(
-            name="web_agent",
-            description=(
-                "Autonomously browse websites, extract content, and synthesize information. "
-                "Use this tool to visit URLs, extract article content, and create structured summaries. "
-                "Handles JavaScript-rendered pages and provides clean, citation-backed results."
-            )
-        )
+        super().__init__()
         self.timeout = timeout * 1000  # Convert to milliseconds
         self.max_pages = max_pages
 
@@ -112,7 +106,29 @@ class WebAgentTool(Tool):
             self.available = True
             self.error_msg = None
 
-    def run(self, url: str = None, urls: List[str] = None, query: str = None) -> ToolResult:
+    @property
+    def name(self) -> str:
+        """Unique name for the tool."""
+        return "web_agent"
+
+    @property
+    def description(self) -> str:
+        """Description of what the tool does."""
+        return (
+            "Autonomously browse websites, extract content, and synthesize information. "
+            "Use this tool to visit URLs, extract article content, and create structured summaries. "
+            "Handles JavaScript-rendered pages and provides clean, citation-backed results."
+        )
+
+    def _run(self, *args, **kwargs) -> str:
+        """Wrapper for the async run method to satisfy BaseTool interface."""
+        result = self.run_tool(*args, **kwargs)
+        if result.success:
+            return result.output
+        else:
+            raise Exception(result.error or "Web agent execution failed")
+
+    def run_tool(self, url: str = None, urls: List[str] = None, query: str = None) -> ToolResult:
         """
         Execute web agent operations.
 
@@ -124,11 +140,14 @@ class WebAgentTool(Tool):
         Returns:
             ToolResult with extracted content and structured summary
         """
+        start_time = time.time()
+
         if not self.available:
             return ToolResult(
                 success=False,
                 output="",
-                error=self.error_msg
+                error=self.error_msg,
+                duration=time.time() - start_time
             )
 
         try:
@@ -146,20 +165,23 @@ class WebAgentTool(Tool):
                 return ToolResult(
                     success=False,
                     output="",
-                    error="Research mode requires web_search tool integration. Use web_search first, then pass URLs to web_agent."
+                    error="Research mode requires web_search tool integration. Use web_search first, then pass URLs to web_agent.",
+                    duration=time.time() - start_time
                 )
             else:
                 return ToolResult(
                     success=False,
                     output="",
-                    error="Must provide either 'url', 'urls', or 'query' parameter"
+                    error="Must provide either 'url', 'urls', or 'query' parameter",
+                    duration=time.time() - start_time
                 )
 
         except Exception as e:
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Web agent error: {str(e)}"
+                error=f"Web agent error: {str(e)}",
+                duration=time.time() - start_time
             )
 
     async def _extract_single_url(self, url: str) -> ToolResult:
@@ -172,6 +194,8 @@ class WebAgentTool(Tool):
         Returns:
             ToolResult with extracted content
         """
+        start_time = time.time()
+
         try:
             # Fetch and extract
             page = await self._fetch_and_extract(url)
@@ -180,7 +204,8 @@ class WebAgentTool(Tool):
                 return ToolResult(
                     success=False,
                     output="",
-                    error=page.error
+                    error=page.error,
+                    duration=time.time() - start_time
                 )
 
             # Format output
@@ -189,14 +214,16 @@ class WebAgentTool(Tool):
             return ToolResult(
                 success=True,
                 output=output,
-                error=None
+                error=None,
+                duration=time.time() - start_time
             )
 
         except Exception as e:
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Failed to extract from {url}: {str(e)}"
+                error=f"Failed to extract from {url}: {str(e)}",
+                duration=time.time() - start_time
             )
 
     async def _extract_multiple_urls(self, urls: List[str]) -> ToolResult:
@@ -209,6 +236,8 @@ class WebAgentTool(Tool):
         Returns:
             ToolResult with synthesized content
         """
+        start_time = time.time()
+
         # Limit number of pages
         urls = urls[:self.max_pages]
 
@@ -227,7 +256,8 @@ class WebAgentTool(Tool):
                 return ToolResult(
                     success=False,
                     output="",
-                    error="Failed to extract content from any of the provided URLs"
+                    error="Failed to extract content from any of the provided URLs",
+                    duration=time.time() - start_time
                 )
 
             # Format synthesized output
@@ -236,14 +266,16 @@ class WebAgentTool(Tool):
             return ToolResult(
                 success=True,
                 output=output,
-                error=None
+                error=None,
+                duration=time.time() - start_time
             )
 
         except Exception as e:
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Failed to extract from multiple URLs: {str(e)}"
+                error=f"Failed to extract from multiple URLs: {str(e)}",
+                duration=time.time() - start_time
             )
 
     async def _fetch_and_extract(self, url: str) -> WebPage:

@@ -40,7 +40,7 @@ def test_single_url():
     print(f"\n🌐 Testing URL: {test_url}")
     print("⏳ Fetching and extracting content...")
 
-    result = tool.run(url=test_url)
+    result = tool.run_tool(url=test_url)
 
     if result.success:
         print("\n✅ SUCCESS!")
@@ -74,7 +74,7 @@ def test_multiple_urls():
 
     print("\n⏳ Fetching and synthesizing content...")
 
-    result = tool.run(urls=test_urls)
+    result = tool.run_tool(urls=test_urls)
 
     if result.success:
         print("\n✅ SUCCESS!")
@@ -102,7 +102,7 @@ def test_error_handling():
     print(f"\n🌐 Testing invalid URL: {invalid_url}")
     print("⏳ Attempting to fetch...")
 
-    result = tool.run(url=invalid_url)
+    result = tool.run_tool(url=invalid_url)
 
     if not result.success:
         print("\n✅ Correctly handled error!")
