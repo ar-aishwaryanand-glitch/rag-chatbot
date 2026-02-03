@@ -39,7 +39,7 @@ from .enhanced_components import (
 from src.config import Config
 
 # Import agent components
-from src.main import initialize_system
+from src.system_init import initialize_system
 from src.agent.agent_executor_v3 import AgentExecutorV3
 from src.agent.tool_registry import ToolRegistry
 from src.agent.tools import (
@@ -279,7 +279,7 @@ def render_agent_sidebar():
                     status.update(label="Re-indexing vector store...")
 
                     # Force rebuild of vector store with new documents
-                    from src.main import initialize_system
+                    from src.system_init import initialize_system
                     rag_chain = initialize_system(rebuild_index=True, use_documents=True)
 
                     # Clear cache and reinitialize agent with new vector store

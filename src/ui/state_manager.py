@@ -9,7 +9,7 @@ from typing import Optional
 from contextlib import contextmanager
 
 # Import from parent src module
-from src.main import initialize_system
+from src.system_init import initialize_system
 from src.config import Config
 
 

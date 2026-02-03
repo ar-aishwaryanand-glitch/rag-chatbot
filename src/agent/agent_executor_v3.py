@@ -290,17 +290,17 @@ Expression (numbers and operators only):"""
                     result = tool.run(expression=expression)
 
                 elif tool_name == "python_executor":
-                prompt = f"""Write Python code to accomplish this task. Return ONLY the code, no explanations.
+                    prompt = f"""Write Python code to accomplish this task. Return ONLY the code, no explanations.
 
 Task: {query}
 
 Code:"""
-                response = self.llm.invoke([HumanMessage(content=prompt)])
-                code = response.content.strip().replace("```python", "").replace("```", "").strip()
-                result = tool.run(code=code)
+                    response = self.llm.invoke([HumanMessage(content=prompt)])
+                    code = response.content.strip().replace("```python", "").replace("```", "").strip()
+                    result = tool.run(code=code)
 
-            elif tool_name == "file_operations":
-                prompt = f"""Extract the file operation details from this query.
+                elif tool_name == "file_operations":
+                    prompt = f"""Extract the file operation details from this query.
 
 Query: {query}
 
@@ -309,69 +309,69 @@ Where operation is one of: read, list, search
 And path is the file/directory path (use "." if not specified)
 
 Response:"""
-                response = self.llm.invoke([HumanMessage(content=prompt)])
-                parts = response.content.strip().split(maxsplit=1)
-                operation = parts[0] if parts else "list"
-                path = parts[1] if len(parts) > 1 else "."
-                result = tool.run(operation=operation, path=path)
+                    response = self.llm.invoke([HumanMessage(content=prompt)])
+                    parts = response.content.strip().split(maxsplit=1)
+                    operation = parts[0] if parts else "list"
+                    path = parts[1] if len(parts) > 1 else "."
+                    result = tool.run(operation=operation, path=path)
 
-            elif tool_name == "document_manager":
-                action = "info"
-                if "stat" in query.lower():
-                    action = "stats"
-                elif "list" in query.lower():
-                    action = "list"
-                result = tool.run(action=action)
+                elif tool_name == "document_manager":
+                    action = "info"
+                    if "stat" in query.lower():
+                        action = "stats"
+                    elif "list" in query.lower():
+                        action = "list"
+                    result = tool.run(action=action)
 
-            elif tool_name == "web_search":
-                result = tool.run(query=query)
+                elif tool_name == "web_search":
+                    result = tool.run(query=query)
 
-            elif tool_name == "web_agent":
-                # Extract URLs from query
-                import re
-                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-                urls = re.findall(url_pattern, query)
+                elif tool_name == "web_agent":
+                    # Extract URLs from query
+                    import re
+                    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                    urls = re.findall(url_pattern, query)
 
-                if urls:
-                    # URLs provided directly in query
-                    if len(urls) == 1:
-                        result = tool.run_tool(url=urls[0])
-                    else:
-                        result = tool.run_tool(urls=urls)
-                else:
-                    # No URLs found - perform web search first to get URLs
-                    search_tool = self.tool_registry.get_tool("web_search")
-                    if search_tool:
-                        # Search for URLs
-                        search_result = search_tool.run(query=query)
-
-                        if search_result.success:
-                            # Extract URLs from search results
-                            search_urls = re.findall(url_pattern, search_result.output)
-
-                            if search_urls:
-                                # Limit to top 3 URLs
-                                search_urls = search_urls[:3]
-                                result = tool.run_tool(urls=search_urls)
-                            else:
-                                # No URLs found in search results
-                                result = search_result  # Return search results as fallback
+                    if urls:
+                        # URLs provided directly in query
+                        if len(urls) == 1:
+                            result = tool.run_tool(url=urls[0])
                         else:
-                            result = search_result  # Return search error
+                            result = tool.run_tool(urls=urls)
                     else:
-                        # web_search not available
-                        from .base_tool import ToolResult
-                        result = ToolResult(
-                            success=False,
-                            output="",
-                            error="web_agent requires URLs. Please provide URLs or enable web_search tool.",
-                            duration=0
+                        # No URLs found - perform web search first to get URLs
+                        search_tool = self.tool_registry.get_tool("web_search")
+                        if search_tool:
+                            # Search for URLs
+                            search_result = search_tool.run(query=query)
+
+                            if search_result.success:
+                                # Extract URLs from search results
+                                search_urls = re.findall(url_pattern, search_result.output)
+
+                                if search_urls:
+                                    # Limit to top 3 URLs
+                                    search_urls = search_urls[:3]
+                                    result = tool.run_tool(urls=search_urls)
+                                else:
+                                    # No URLs found in search results
+                                    result = search_result  # Return search results as fallback
+                            else:
+                                result = search_result  # Return search error
+                        else:
+                            # web_search not available
+                            from .base_tool import ToolResult
+                            result = ToolResult(
+                                success=False,
+                                output="",
+                                error="web_agent requires URLs. Please provide URLs or enable web_search tool.",
+                                duration=0
                         )
 
-            else:  # document_search
-                result = tool.run(query=query)
+                else:  # document_search
+                    result = tool.run(query=query)
 
-            duration = time.time() - start_time
+                duration = time.time() - start_time
 
             # Store result
             state['tools_used'].append(tool_name)
