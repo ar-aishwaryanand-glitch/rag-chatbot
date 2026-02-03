@@ -14,6 +14,7 @@ from .document_handler import (
     delete_uploaded_file,
     get_upload_count
 )
+from .url_handler import handle_url_submission
 
 # Import Config for defaults
 from src.config import Config
@@ -227,6 +228,47 @@ def render_upload_section():
             st.rerun()
 
 
+def render_url_input_section():
+    """
+    Render URL input section in sidebar.
+
+    Allows users to:
+    - Enter URLs to fetch content from
+    - Automatically extract and save web content
+    - Index content in vector store
+    """
+    st.sidebar.subheader("🌐 Add from URL")
+
+    url_input = st.sidebar.text_input(
+        "Enter URL",
+        placeholder="https://example.com/article",
+        help="Paste a URL to fetch and index its content",
+        key='url_input'
+    )
+
+    if url_input and url_input.strip():
+        col1, col2 = st.sidebar.columns(2)
+
+        with col1:
+            if st.button("✅ Fetch & Index", use_container_width=True, key='fetch_url_button'):
+                with st.spinner("Fetching content..."):
+                    success = handle_url_submission(url_input.strip())
+
+                    if success:
+                        # Clear the input by triggering rerun
+                        st.session_state.rebuild_pending = True
+                        st.rerun()
+
+        with col2:
+            if st.button("❌ Clear", use_container_width=True, key='clear_url_button'):
+                st.rerun()
+
+    # Show fetched URLs count
+    url_count = len(st.session_state.get('url_sources', []))
+    if url_count > 0:
+        st.sidebar.info(f"🔗 {url_count} URL(s) indexed")
+
+
 def render_vector_store_info():
     """
     Render vector store information and controls.
@@ -305,6 +347,8 @@ def render_mode_selector():
     # Show upload section only in custom mode
     if mode == 'custom':
         render_upload_section()
+        st.sidebar.markdown("---")
+        render_url_input_section()
 
 
 def render_sidebar():

@@ -33,6 +33,7 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - **📊 Structured Summaries**: Markdown output with proper source attribution
 - **🔄 Auto-Chaining**: Automatically chains web_search → web_agent for seamless research
 - **📤 Document Upload**: Upload PDF, DOCX, TXT, MD files directly in UI with auto-indexing
+- **🌐 URL Content Indexing**: Paste any URL to fetch, extract, and index web content directly
 - **🗂️ Multi-Format Support**: Parse and index documents in multiple formats
 
 ## 🎉 What's New
@@ -50,6 +51,12 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - Automatic parsing and indexing
 - Multi-format support with unified loader
 - No manual file copying needed
+
+**🌐 URL Content Indexing** (Feb 2026)
+- Paste any URL in the sidebar to fetch and index its content
+- Automatically extracts clean article content using web agent
+- Saves content to vector store for future queries
+- Perfect for adding blog posts, documentation, or research articles to your knowledge base
 
 **🔄 Intelligent Auto-Chaining** (Feb 2026)
 - Agent automatically chains tools when needed
@@ -147,6 +154,7 @@ launch_agent_ui.bat      # Windows
 - 🌐 **Autonomous web browsing** - visits URLs and extracts content
 - 🔄 **Auto-chaining** - automatically chains web_search → web_agent
 - 📤 **Document upload** - upload PDF, DOCX, TXT, MD files with auto-indexing
+- 🌐 **URL content indexing** - paste URLs to fetch and index web content
 - 📊 Self-reflection and learning
 - 🎯 Intelligent tool routing
 - 📈 Performance tracking
@@ -172,8 +180,9 @@ The app will open at [http://localhost:8501](http://localhost:8501)
 ### Agent UI Usage
 
 1. **Upload documents** (optional) - Upload PDF, DOCX, TXT, or MD files in the sidebar
-2. **Start a conversation** - The agent will remember context
-3. **Ask anything:**
+2. **Add web content** (optional) - Paste URLs to fetch and index web content directly
+3. **Start a conversation** - The agent will remember context
+4. **Ask anything:**
    - **Document questions**: "What is RAG?" or "Summarize the uploaded document"
    - **Web research (latest info)**: "Tell me the latest AI news" (auto-chains search → extract)
    - **Direct URL extraction**: "Visit https://openai.com/research and extract the main content"
@@ -181,10 +190,10 @@ The app will open at [http://localhost:8501](http://localhost:8501)
    - **Calculations**: "Calculate 15% of $2500"
    - **Code execution**: "Write and run Python code to sort a list"
    - **File operations**: "List files in current directory"
-4. **Enable/Disable features** in sidebar:
+5. **Enable/Disable features** in sidebar:
    - Memory (conversation + episodic)
    - Self-Reflection (learning & improvement)
-5. **View insights:**
+6. **View insights:**
    - Agent reasoning (tool selection)
    - Memory context
    - Performance stats
@@ -214,6 +223,26 @@ See [Agent UI Guide](AGENT_UI_GUIDE.md) for comprehensive usage instructions.
 3. Click **Process Uploads**
 4. Click **Rebuild Vector Store**
 5. Start asking questions about your documents
+
+### Add Content from URLs
+
+In Agent UI (Custom Documents mode):
+1. Find the **🌐 Add from URL** section in the sidebar
+2. Paste any URL (e.g., `https://example.com/article`)
+3. Click **✅ Fetch & Index**
+4. The agent will:
+   - Fetch the web page using the web agent tool
+   - Extract clean article content (no ads/navigation)
+   - Save it to your document collection
+   - Mark it for indexing
+5. Click **🔄 Rebuild** to index the new content
+6. Query the web content like any other document!
+
+**Perfect for:**
+- Adding blog posts to your knowledge base
+- Indexing documentation pages
+- Saving research articles
+- Building a personal knowledge repository from web sources
 
 ### Settings
 
