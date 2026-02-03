@@ -1,7 +1,9 @@
 """Learning module for extracting patterns from reflections."""
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from collections import Counter, defaultdict
+from pathlib import Path
+import pickle
 from .reflection_module import Reflection, ReflectionType
 
 
@@ -16,8 +18,21 @@ class LearningModule:
     - Optimal routing strategies
     """
 
-    def __init__(self):
-        """Initialize learning module."""
+    def __init__(self, storage_path: Optional[Path] = None):
+        """
+        Initialize learning module with persistence.
+
+        Args:
+            storage_path: Path to store learning data (default: data/learning)
+        """
+        # Set up storage
+        if storage_path is None:
+            storage_path = Path(__file__).parent.parent.parent.parent / "data" / "learning"
+
+        self.storage_path = Path(storage_path)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.data_file = self.storage_path / "learning_data.pkl"
+
         # Tool performance tracking
         self.tool_usage = Counter()  # tool_name -> count
         self.tool_success = defaultdict(list)  # tool_name -> [success_bools]
@@ -32,6 +47,63 @@ class LearningModule:
 
         # Quality metrics
         self.quality_scores = []  # List of quality scores
+
+        # Load existing data if available
+        self._load_data()
+
+    def _load_data(self) -> None:
+        """Load learning data from disk."""
+        if self.data_file.exists():
+            try:
+                with open(self.data_file, 'rb') as f:
+                    data = pickle.load(f)
+
+                # Restore Counter objects
+                self.tool_usage = Counter(data.get('tool_usage', {}))
+                self.error_patterns = Counter(data.get('error_patterns', {}))
+
+                # Restore defaultdicts
+                self.tool_success = defaultdict(list, data.get('tool_success', {}))
+                self.tool_response_times = defaultdict(list, data.get('tool_response_times', {}))
+                self.tool_errors = defaultdict(Counter, {
+                    k: Counter(v) for k, v in data.get('tool_errors', {}).items()
+                })
+
+                # Restore query_tool_mapping
+                self.query_tool_mapping = defaultdict(Counter, {
+                    k: Counter(v) for k, v in data.get('query_tool_mapping', {}).items()
+                })
+
+                # Restore simple list
+                self.quality_scores = data.get('quality_scores', [])
+
+                tools_count = len(self.tool_usage)
+                total_actions = sum(self.tool_usage.values())
+                print(f"📊 Loaded learning data: {tools_count} tools tracked, {total_actions} total actions")
+
+            except Exception as e:
+                print(f"⚠️  Warning: Could not load learning data: {e}")
+                print("   Starting with fresh learning data")
+
+    def _save_data(self) -> None:
+        """Save learning data to disk."""
+        try:
+            # Convert data structures to serializable format
+            data = {
+                'tool_usage': dict(self.tool_usage),
+                'tool_success': dict(self.tool_success),
+                'tool_response_times': dict(self.tool_response_times),
+                'query_tool_mapping': {k: dict(v) for k, v in self.query_tool_mapping.items()},
+                'error_patterns': dict(self.error_patterns),
+                'tool_errors': {k: dict(v) for k, v in self.tool_errors.items()},
+                'quality_scores': self.quality_scores
+            }
+
+            with open(self.data_file, 'wb') as f:
+                pickle.dump(data, f)
+
+        except Exception as e:
+            print(f"⚠️  Warning: Could not save learning data: {e}")
 
     def learn_from_reflection(self, reflection: Reflection) -> None:
         """
@@ -48,6 +120,9 @@ class LearningModule:
 
         elif reflection.type == ReflectionType.ERROR_ANALYSIS:
             self._learn_from_error(reflection)
+
+        # Save data after learning
+        self._save_data()
 
     def learn_from_reflections(self, reflections: List[Reflection]) -> None:
         """Learn from multiple reflections."""
@@ -251,3 +326,11 @@ class LearningModule:
         self.error_patterns.clear()
         self.tool_errors.clear()
         self.quality_scores.clear()
+
+        # Delete saved data file
+        if self.data_file.exists():
+            try:
+                self.data_file.unlink()
+                print("🗑️  Cleared learning data from disk")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not delete learning data file: {e}")

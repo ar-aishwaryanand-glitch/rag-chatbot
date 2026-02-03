@@ -4,6 +4,8 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
+import json
 
 
 class ReflectionType(Enum):
@@ -38,6 +40,19 @@ class Reflection:
             "metadata": self.metadata
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Reflection':
+        """Create reflection from dictionary."""
+        return cls(
+            type=ReflectionType(data["type"]),
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            context=data["context"],
+            evaluation=data["evaluation"],
+            insights=data.get("insights", []),
+            suggestions=data.get("suggestions", []),
+            metadata=data.get("metadata", {})
+        )
+
 
 class ReflectionModule:
     """
@@ -50,15 +65,53 @@ class ReflectionModule:
     - Performance tracking
     """
 
-    def __init__(self, llm=None):
+    def __init__(self, llm=None, storage_path: Optional[Path] = None):
         """
-        Initialize reflection module.
+        Initialize reflection module with persistence.
 
         Args:
             llm: Optional LLM for generating reflections (can work without)
+            storage_path: Path to store reflection history (default: data/reflections)
         """
         self.llm = llm
+
+        # Set up storage
+        if storage_path is None:
+            storage_path = Path(__file__).parent.parent.parent.parent / "data" / "reflections"
+
+        self.storage_path = Path(storage_path)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.reflections_file = self.storage_path / "reflections.jsonl"  # JSONL for easy appending
+
+        # Load existing reflections
         self.reflections: List[Reflection] = []
+        self._load_reflections()
+
+    def _load_reflections(self) -> None:
+        """Load reflection history from disk."""
+        if self.reflections_file.exists():
+            try:
+                with open(self.reflections_file, 'r') as f:
+                    for line in f:
+                        if line.strip():
+                            data = json.loads(line)
+                            reflection = Reflection.from_dict(data)
+                            self.reflections.append(reflection)
+
+                print(f"📝 Loaded {len(self.reflections)} reflections from history")
+
+            except Exception as e:
+                print(f"⚠️  Warning: Could not load reflection history: {e}")
+                print("   Starting with fresh reflection history")
+
+    def _save_reflection(self, reflection: Reflection) -> None:
+        """Save a reflection to disk (append to JSONL file)."""
+        try:
+            with open(self.reflections_file, 'a') as f:
+                json.dump(reflection.to_dict(), f)
+                f.write('\n')
+        except Exception as e:
+            print(f"⚠️  Warning: Could not save reflection: {e}")
 
     def reflect_on_tool_selection(
         self,
@@ -112,6 +165,7 @@ class ReflectionModule:
         )
 
         self.reflections.append(reflection)
+        self._save_reflection(reflection)
         return reflection
 
     def reflect_on_answer_quality(
@@ -184,6 +238,7 @@ class ReflectionModule:
         )
 
         self.reflections.append(reflection)
+        self._save_reflection(reflection)
         return reflection
 
     def reflect_on_error(
@@ -234,6 +289,7 @@ class ReflectionModule:
         )
 
         self.reflections.append(reflection)
+        self._save_reflection(reflection)
         return reflection
 
     def reflect_on_session(
@@ -294,6 +350,7 @@ class ReflectionModule:
         )
 
         self.reflections.append(reflection)
+        self._save_reflection(reflection)
         return reflection
 
     def get_recent_reflections(self, n: int = 5) -> List[Reflection]:
@@ -413,3 +470,11 @@ class ReflectionModule:
     def clear(self) -> None:
         """Clear all reflections."""
         self.reflections.clear()
+
+        # Delete saved reflections file
+        if self.reflections_file.exists():
+            try:
+                self.reflections_file.unlink()
+                print("🗑️  Cleared reflection history from disk")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not delete reflections file: {e}")
