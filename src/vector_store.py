@@ -23,6 +23,20 @@ class VectorStoreManager:
         self.vector_store: Optional[FAISS] = None
         self.store_path = Config.VECTOR_STORE_PATH
 
+        # Automatically load vector store from disk if it exists
+        if self.store_path.exists():
+            try:
+                print(f"📂 Loading existing vector store from {self.store_path}...")
+                self.vector_store = FAISS.load_local(
+                    str(self.store_path),
+                    embeddings=self.embedding_manager.embedding_model,
+                    allow_dangerous_deserialization=True
+                )
+                print("✅ Vector store loaded successfully")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not load vector store: {e}")
+                print("   You may need to re-index your documents")
+
     def create_vector_store(self, chunks: List[Document], batch_size: int = 3, delay: float = 2.0) -> FAISS:
         """
         Create a new FAISS vector store from document chunks with rate limiting.
