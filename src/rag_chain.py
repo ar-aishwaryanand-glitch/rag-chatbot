@@ -194,24 +194,30 @@ Context:
 
             return response.content
 
-    def ask(self, question: str) -> Dict[str, any]:
+    def ask(self, question: str, top_k: int = None) -> Dict[str, any]:
         """
         Main RAG pipeline: retrieve context and generate answer.
 
         Args:
             question: User question
+            top_k: Number of document chunks to retrieve (uses Config.TOP_K_RESULTS if not specified)
 
         Returns:
             Dictionary with answer, context, and metadata
         """
         start_time = time.time()
 
+        # Use Config default if top_k not specified
+        if top_k is None:
+            top_k = Config.TOP_K_RESULTS
+
         with self.observability.trace_operation(
             "rag_query",
             attributes={
                 "query": question[:100],
                 "llm": Config.get_llm_display_name(),
-                "vector_store": Config.get_vector_store_display_name()
+                "vector_store": Config.get_vector_store_display_name(),
+                "top_k": top_k
             }
         ) as span:
             try:
@@ -219,7 +225,7 @@ Context:
 
                 # Step 1: Retrieve relevant context
                 print("📚 Retrieving relevant context...")
-                documents = self.retrieve_context(question)
+                documents = self.retrieve_context(question, k=top_k)
 
                 if not documents:
                     if span:

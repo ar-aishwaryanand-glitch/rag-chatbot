@@ -48,6 +48,10 @@ Use for exploring files, reading documents, or finding specific files."""
         Returns:
             Result of operation or error message
         """
+        # Validate operation parameter
+        if not operation or not operation.strip():
+            return "Error: Operation cannot be empty"
+
         operation = operation.lower().strip()
 
         try:
@@ -87,25 +91,40 @@ Use for exploring files, reading documents, or finding specific files."""
             return False
 
     def _read_file(self, file_path: Path) -> str:
-        """Read file contents."""
+        """Read file contents with multiple encoding attempts."""
         if not file_path.exists():
             return f"Error: File not found: {file_path.name}"
+
+        # Check for broken symlinks
+        if file_path.is_symlink() and not file_path.resolve().exists():
+            return f"Error: Broken symlink: {file_path.name}"
 
         if not file_path.is_file():
             return f"Error: Not a file: {file_path.name}"
 
-        try:
-            content = file_path.read_text(encoding='utf-8')
+        # Try multiple encodings
+        encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
 
-            # Limit output size
-            max_chars = 5000
-            if len(content) > max_chars:
-                content = content[:max_chars] + f"\n\n... (truncated, {len(content)} total chars)"
+        for encoding in encodings:
+            try:
+                content = file_path.read_text(encoding=encoding)
 
-            return f"File: {file_path.name}\n\n{content}"
+                # Limit output size
+                max_chars = 5000
+                if len(content) > max_chars:
+                    content = content[:max_chars] + f"\n\n... (truncated, {len(content)} total chars)"
 
-        except UnicodeDecodeError:
-            return f"Error: Cannot read binary file: {file_path.name}"
+                return f"File: {file_path.name}\n\n{content}"
+
+            except UnicodeDecodeError:
+                continue  # Try next encoding
+            except PermissionError:
+                return f"Error: Permission denied: {file_path.name}"
+            except Exception as e:
+                return f"Error reading file: {str(e)}"
+
+        # If all encodings failed, it's likely a binary file
+        return f"Error: Cannot read file (appears to be binary or unknown encoding): {file_path.name}"
 
     def _list_directory(self, dir_path: Path) -> str:
         """List files in directory."""
@@ -141,7 +160,15 @@ Use for exploring files, reading documents, or finding specific files."""
         """Search for files matching pattern."""
         pattern_str = str(pattern)
 
+        # Validate pattern
+        if not pattern_str or not pattern_str.strip():
+            return "Error: Search pattern cannot be empty"
+
         try:
+            # Escape special glob characters for literal matching
+            # But preserve * and ? for wildcards if user intentionally included them
+            # For now, use the pattern as-is but catch any errors
+
             # Use glob from workspace root
             matches = list(self.workspace_root.glob(f"**/*{pattern_str}*"))
 
@@ -162,6 +189,11 @@ Use for exploring files, reading documents, or finding specific files."""
 
             return "\n".join(lines)
 
+        except ValueError as e:
+            # Invalid glob pattern
+            return f"Search error: Invalid pattern '{pattern_str}'"
+        except PermissionError as e:
+            return f"Search error: Permission denied while searching"
         except Exception as e:
             return f"Search error: {str(e)}"
 

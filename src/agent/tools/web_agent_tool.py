@@ -11,11 +11,13 @@ This tool enables the agent to:
 
 import asyncio
 import time
+import ipaddress
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlparse
 import re
+import socket
 
 from .base_tool import BaseTool, ToolResult
 
@@ -129,6 +131,61 @@ class WebAgentTool(BaseTool):
         else:
             raise Exception(result.error or "Web agent execution failed")
 
+    def validate_url(self, url: str) -> tuple[bool, Optional[str]]:
+        """
+        Validate URL for security (prevent SSRF attacks).
+
+        Args:
+            url: URL to validate
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            parsed = urlparse(url)
+
+            # Check scheme
+            if parsed.scheme not in ['http', 'https']:
+                return False, f"Invalid URL scheme '{parsed.scheme}'. Only http and https are allowed."
+
+            # Check for empty or invalid hostname
+            if not parsed.netloc:
+                return False, "URL must include a hostname"
+
+            # Extract hostname (remove port if present)
+            hostname = parsed.netloc.split(':')[0]
+
+            # Block localhost variations
+            localhost_variants = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '0:0:0:0:0:0:0:1']
+            if hostname.lower() in localhost_variants:
+                return False, "Access to localhost is not allowed"
+
+            # Try to resolve hostname and check if it's a private IP
+            try:
+                # Get IP address
+                ip_str = socket.gethostbyname(hostname)
+                ip = ipaddress.ip_address(ip_str)
+
+                # Check if it's a private/internal IP
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    return False, f"Access to private/internal IP addresses is not allowed"
+
+                # Block AWS metadata endpoint specifically
+                if ip_str == '169.254.169.254':
+                    return False, "Access to cloud metadata endpoints is not allowed"
+
+            except socket.gaierror:
+                # Could not resolve - might be invalid hostname
+                return False, f"Could not resolve hostname: {hostname}"
+            except ValueError:
+                # Invalid IP address format - but we'll allow it since gethostbyname worked
+                pass
+
+            return True, None
+
+        except Exception as e:
+            return False, f"URL validation error: {str(e)}"
+
     def run_tool(self, url: str = None, urls: List[str] = None, query: str = None) -> ToolResult:
         """
         Execute web agent operations.
@@ -154,13 +211,36 @@ class WebAgentTool(BaseTool):
         try:
             # Determine operation mode
             if url:
+                # Validate single URL
+                is_valid, error = self.validate_url(url)
+                if not is_valid:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=f"URL validation failed: {error}",
+                        duration=time.time() - start_time
+                    )
+
                 # Single URL extraction
                 result = asyncio.run(self._extract_single_url(url))
                 return result
+
             elif urls:
+                # Validate all URLs
+                for u in urls:
+                    is_valid, error = self.validate_url(u)
+                    if not is_valid:
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error=f"URL validation failed for {u}: {error}",
+                            duration=time.time() - start_time
+                        )
+
                 # Multi-URL synthesis
                 result = asyncio.run(self._extract_multiple_urls(urls))
                 return result
+
             elif query:
                 # Research mode (search + extract)
                 return ToolResult(

@@ -47,25 +47,39 @@ This tool searches the document collection and returns answers with source citat
         Returns:
             Formatted string with answer and sources
         """
-        # Call the existing RAG chain
-        result = self.rag_chain.ask(query)
+        # Validate input
+        if not query or not query.strip():
+            return "Error: Query cannot be empty"
 
-        # Format the result for the agent
-        answer = result['answer']
-        sources = result['sources']
+        try:
+            # Call the existing RAG chain with top_k parameter
+            result = self.rag_chain.ask(query, top_k=top_k)
 
-        # Build formatted output
-        output_parts = [f"Answer: {answer}", "", "Sources:"]
+            # Validate result structure
+            if not isinstance(result, dict):
+                return "Error: Invalid response from RAG chain"
 
-        for i, source in enumerate(sources, 1):
-            source_name = source['source']
-            topic = source['topic']
-            preview = source['content'][:150] + "..."
+            # Format the result for the agent
+            answer = result.get('answer', 'No answer generated')
+            sources = result.get('sources', [])
 
-            output_parts.append(f"{i}. Source: {source_name} (Topic: {topic})")
-            output_parts.append(f"   Preview: {preview}")
+            # Build formatted output
+            output_parts = [f"Answer: {answer}", "", "Sources:"]
 
-        return "\n".join(output_parts)
+            for i, source in enumerate(sources, 1):
+                # Safely extract source fields with defaults
+                source_name = source.get('source', 'Unknown')
+                topic = source.get('topic', 'No topic')
+                content = source.get('content', '')
+                preview = content[:150] + "..." if len(content) > 150 else content
+
+                output_parts.append(f"{i}. Source: {source_name} (Topic: {topic})")
+                output_parts.append(f"   Preview: {preview}")
+
+            return "\n".join(output_parts)
+
+        except Exception as e:
+            return f"Error executing document search: {str(e)}"
 
     def get_raw_result(self, query: str) -> dict:
         """
