@@ -74,3 +74,4 @@ models/
 .DS_Store
 .AppleDouble
 .LSOverride
+streamlit_cloud_secrets.toml
