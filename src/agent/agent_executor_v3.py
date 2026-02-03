@@ -29,7 +29,8 @@ class AgentExecutorV3:
         tool_registry: ToolRegistry,
         config,
         enable_memory: bool = True,
-        enable_reflection: bool = True
+        enable_reflection: bool = True,
+        enable_checkpoints: bool = True
     ):
         """
         Initialize the enhanced agent executor.
@@ -40,6 +41,7 @@ class AgentExecutorV3:
             config: Configuration object
             enable_memory: Enable memory features
             enable_reflection: Enable reflection features
+            enable_checkpoints: Enable checkpoint storage for crash recovery
         """
         self.llm = llm
         self.tool_registry = tool_registry
@@ -48,6 +50,7 @@ class AgentExecutorV3:
         # Phase 3 features
         self.enable_memory = enable_memory
         self.enable_reflection = enable_reflection
+        self.enable_checkpoints = enable_checkpoints
 
         if enable_memory:
             self.memory_manager = MemoryManager()
@@ -60,6 +63,18 @@ class AgentExecutorV3:
         else:
             self.reflection_module = None
             self.learning_module = None
+
+        # Initialize checkpoint manager
+        self.checkpoint_manager = None
+        if enable_checkpoints:
+            try:
+                from src.database import get_checkpoint_manager
+                self.checkpoint_manager = get_checkpoint_manager()
+                if not self.checkpoint_manager.is_available():
+                    self.checkpoint_manager = None
+            except Exception as e:
+                print(f"⚠️  Checkpointing disabled: {e}")
+                self.checkpoint_manager = None
 
         self.graph = self._build_graph()
 
@@ -95,7 +110,13 @@ class AgentExecutorV3:
         else:
             workflow.add_edge("synthesize", END)
 
-        return workflow.compile()
+        # Compile with checkpoint saver if available
+        if self.checkpoint_manager and self.checkpoint_manager.is_available():
+            checkpointer = self.checkpoint_manager.get_checkpointer()
+            print("✅ LangGraph compiled with checkpoint storage")
+            return workflow.compile(checkpointer=checkpointer)
+        else:
+            return workflow.compile()
 
     def _understand_query(self, state: AgentState) -> AgentState:
         """
@@ -388,12 +409,13 @@ Response:"""
 
         return state
 
-    def execute(self, query: str) -> Dict[str, Any]:
+    def execute(self, query: str, thread_id: str = None) -> Dict[str, Any]:
         """
         Execute the agent for a given query (synchronous).
 
         Args:
             query: User question
+            thread_id: Optional thread ID for checkpoint storage (enables crash recovery)
 
         Returns:
             Final state dictionary with answer and metadata
@@ -416,8 +438,17 @@ Response:"""
             'execution_metadata': {}
         }
 
-        # Execute graph
-        final_state = self.graph.invoke(initial_state)
+        # Prepare config for checkpointing
+        config = {}
+        if thread_id and self.checkpoint_manager and self.checkpoint_manager.is_available():
+            config = {"configurable": {"thread_id": thread_id}}
+            print(f"🔖 Checkpointing enabled for thread: {thread_id}")
+
+        # Execute graph with optional checkpointing
+        if config:
+            final_state = self.graph.invoke(initial_state, config=config)
+        else:
+            final_state = self.graph.invoke(initial_state)
 
         # Add duration
         final_state['execution_metadata']['total_duration'] = time.time() - final_state['start_time']
@@ -425,6 +456,44 @@ Response:"""
         # Add reflection summary if enabled
         if self.enable_reflection and self.learning_module:
             final_state['execution_metadata']['performance'] = self.learning_module.get_overall_performance()
+
+        return final_state
+
+    def resume_from_checkpoint(self, thread_id: str, query: str = None) -> Dict[str, Any]:
+        """
+        Resume execution from the last checkpoint.
+
+        Args:
+            thread_id: Thread ID to resume from
+            query: Optional new query to continue with
+
+        Returns:
+            Final state dictionary with answer and metadata
+        """
+        if not self.checkpoint_manager or not self.checkpoint_manager.is_available():
+            raise ValueError("Checkpoint storage not available. Enable USE_POSTGRES=true and USE_CHECKPOINTS=true")
+
+        # Get the last checkpoint for this thread
+        checkpoint = self.checkpoint_manager.get_checkpoint(thread_id)
+
+        if not checkpoint:
+            raise ValueError(f"No checkpoint found for thread: {thread_id}")
+
+        print(f"🔄 Resuming from checkpoint for thread: {thread_id}")
+
+        # Prepare config
+        config = {"configurable": {"thread_id": thread_id}}
+
+        # Resume with optional new input
+        if query:
+            # Create new state with updated query
+            resume_state = checkpoint['state'].copy()
+            resume_state['query'] = query
+            resume_state['messages'].append(HumanMessage(content=query))
+            final_state = self.graph.invoke(resume_state, config=config)
+        else:
+            # Resume from last state
+            final_state = self.graph.invoke(checkpoint['state'], config=config)
 
         return final_state
 
