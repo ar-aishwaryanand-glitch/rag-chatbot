@@ -269,6 +269,118 @@ def render_url_input_section():
         st.sidebar.info(f"🔗 {url_count} URL(s) indexed")
 
 
+def render_session_manager():
+    """
+    Render session management controls.
+
+    Allows users to:
+    - Create new sessions
+    - View past sessions
+    - Restore previous conversations
+    - Delete sessions
+    """
+    try:
+        from src.database.session_manager import SessionManager
+    except ImportError:
+        return  # PostgreSQL not available
+
+    # Initialize session manager
+    if 'session_manager' not in st.session_state:
+        try:
+            st.session_state.session_manager = SessionManager()
+        except Exception:
+            return  # Failed to initialize
+
+    session_mgr = st.session_state.session_manager
+
+    # Only show if PostgreSQL is enabled
+    if not session_mgr.is_available():
+        return
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("💾 Session Management")
+
+    # Get current session ID
+    current_session = st.session_state.get('current_session_id')
+
+    # Session selector
+    sessions = session_mgr.list_sessions(limit=20)
+
+    if sessions:
+        session_options = {
+            f"{s['title']} ({s['message_count']} messages)": s['session_id']
+            for s in sessions
+        }
+        session_options = {"➕ New Session": None, **session_options}
+
+        selected = st.sidebar.selectbox(
+            "Select Session",
+            options=list(session_options.keys()),
+            key='session_selector'
+        )
+
+        selected_id = session_options[selected]
+
+        # Handle session change
+        if selected_id and selected_id != current_session:
+            # Restore session
+            restored = session_mgr.restore_session(selected_id)
+            if restored:
+                st.session_state.current_session_id = selected_id
+                st.session_state.messages = restored['conversation']
+                st.success(f"✅ Restored: {restored['session']['title']}")
+                st.rerun()
+
+        elif not selected_id and current_session:
+            # Create new session
+            new_id = session_mgr.create_session(title="New Conversation")
+            if new_id:
+                st.session_state.current_session_id = new_id
+                st.session_state.messages = []
+                st.success("✅ New session created")
+                st.rerun()
+
+    else:
+        # No sessions yet
+        if st.sidebar.button("➕ Start First Session", use_container_width=True):
+            new_id = session_mgr.create_session(title="First Conversation")
+            if new_id:
+                st.session_state.current_session_id = new_id
+                st.session_state.messages = []
+                st.rerun()
+
+    # Session info
+    if current_session:
+        st.sidebar.info(f"📝 Session: {current_session[:8]}...")
+
+        # Rename session
+        with st.sidebar.expander("⚙️ Session Options"):
+            new_title = st.text_input(
+                "Rename Session",
+                placeholder="Enter new title",
+                key='session_rename_input'
+            )
+
+            if st.button("💾 Save Title", key='save_title_button'):
+                if new_title:
+                    session_mgr.update_session_title(current_session, new_title)
+                    st.success("✅ Title updated")
+                    st.rerun()
+
+            # Delete session
+            if st.button("🗑️ Delete Session", key='delete_session_button', type='secondary'):
+                if st.session_state.get('confirm_delete'):
+                    session_mgr.delete_session(current_session)
+                    st.session_state.current_session_id = None
+                    st.session_state.messages = []
+                    st.session_state.confirm_delete = False
+                    st.success("✅ Session deleted")
+                    st.rerun()
+                else:
+                    st.session_state.confirm_delete = True
+                    st.warning("⚠️ Click again to confirm deletion")
+
+
 def render_vector_store_info():
     """
     Render vector store information and controls.
@@ -366,6 +478,9 @@ def render_sidebar():
         st.title("🤖 RAG Assistant")
         st.markdown("Retrieval-Augmented Generation")
         st.markdown("---")
+
+        # Session management (if PostgreSQL enabled)
+        render_session_manager()
 
         # Mode selector (includes upload section if custom mode)
         render_mode_selector()

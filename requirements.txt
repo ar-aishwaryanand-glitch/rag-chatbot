@@ -45,6 +45,9 @@ lxml>=4.9.0  # XML/HTML processing (required by readability)
 pypdf>=3.17.0  # PDF file parsing
 python-docx>=1.0.0  # DOCX file parsing
 
+# PostgreSQL Database (Optional - for persistent session storage)
+psycopg2-binary>=2.9.0  # PostgreSQL adapter (binary distribution, no compilation)
+
 # ===== INSTALL INSTRUCTIONS =====
 # If you get build errors, try:
 # pip install --upgrade pip setuptools wheel
