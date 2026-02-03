@@ -88,6 +88,20 @@ def initialize_database(backend):
         backend.initialize_database()
         print("✅ Database tables created successfully")
 
+        # Initialize policy tables
+        try:
+            from src.policy import get_policy_store
+            print("\n📊 Initializing policy tables...")
+            policy_store = get_policy_store()
+            if policy_store.is_available():
+                policy_store.initialize_tables()
+                print("✅ Policy tables created successfully")
+            else:
+                print("⚠️  Policy store not available (PostgreSQL disabled)")
+        except Exception as e:
+            print(f"⚠️  Failed to initialize policy tables: {e}")
+            print("   Policy engine will still work without persistent storage")
+
         # Verify tables
         with backend.get_connection() as conn:
             cursor = conn.cursor()

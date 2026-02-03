@@ -1,23 +1,29 @@
 """RAG chain implementation for question answering."""
 
-from typing import List, Dict
+from typing import List, Dict, Union, TYPE_CHECKING
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
+import time
 
 from .config import Config
-from .vector_store import VectorStoreManager
+from .observability import get_observability, instrumented
+
+if TYPE_CHECKING:
+    from .vector_store import VectorStoreManager
+    from .document_manager import DocumentManager
 
 class RAGChain:
     """Implements the RAG (Retrieval-Augmented Generation) chain."""
 
-    def __init__(self, vector_store_manager: VectorStoreManager):
+    def __init__(self, vector_store_manager: Union['VectorStoreManager', 'DocumentManager']):
         """
         Initialize the RAG chain.
 
         Args:
-            vector_store_manager: Instance of VectorStoreManager
+            vector_store_manager: Instance of VectorStoreManager or DocumentManager
         """
         self.vector_store_manager = vector_store_manager
+        self.observability = get_observability()
 
         # Initialize LLM based on provider
         self.llm = self._initialize_llm()
@@ -90,12 +96,36 @@ Context:
         Returns:
             List of relevant Document chunks
         """
-        results = self.vector_store_manager.similarity_search_with_score(query, k=k)
+        start_time = time.time()
 
-        # Extract documents (ignore scores for now)
-        documents = [doc for doc, score in results]
+        with self.observability.trace_operation(
+            "retrieve_context",
+            attributes={
+                "query": query[:100],  # First 100 chars
+                "top_k": k,
+                "vector_store": Config.get_vector_store_display_name()
+            }
+        ) as span:
+            results = self.vector_store_manager.similarity_search_with_score(query, k=k)
 
-        return documents
+            # Extract documents (ignore scores for now)
+            documents = [doc for doc, score in results]
+
+            # Add span attributes
+            if span:
+                span.set_attribute("documents_retrieved", len(documents))
+                if documents:
+                    span.set_attribute("avg_score", sum(score for _, score in results) / len(results))
+
+            # Record metric
+            duration_ms = (time.time() - start_time) * 1000
+            self.observability.record_metric(
+                "retrieval",
+                duration_ms,
+                {"top_k": k, "num_results": len(documents)}
+            )
+
+            return documents
 
     def format_context(self, documents: List[Document]) -> str:
         """
@@ -131,16 +161,38 @@ Context:
         Returns:
             Generated answer
         """
-        # Format the prompt
-        messages = self.prompt_template.format_messages(
-            context=context,
-            question=query
-        )
+        start_time = time.time()
 
-        # Generate response
-        response = self.llm.invoke(messages)
+        with self.observability.trace_operation(
+            "generate_answer",
+            attributes={
+                "query": query[:100],
+                "context_length": len(context),
+                "llm": Config.get_llm_display_name()
+            }
+        ) as span:
+            # Format the prompt
+            messages = self.prompt_template.format_messages(
+                context=context,
+                question=query
+            )
 
-        return response.content
+            # Generate response
+            response = self.llm.invoke(messages)
+
+            # Add span attributes
+            if span:
+                span.set_attribute("answer_length", len(response.content))
+
+            # Record metric
+            duration_ms = (time.time() - start_time) * 1000
+            self.observability.record_metric(
+                "generation",
+                duration_ms,
+                {"llm": Config.LLM_PROVIDER}
+            )
+
+            return response.content
 
     def ask(self, question: str) -> Dict[str, any]:
         """
@@ -152,44 +204,83 @@ Context:
         Returns:
             Dictionary with answer, context, and metadata
         """
-        print(f"\n🔍 Processing question: {question}")
+        start_time = time.time()
 
-        # Step 1: Retrieve relevant context
-        print("📚 Retrieving relevant context...")
-        documents = self.retrieve_context(question)
-
-        if not documents:
-            return {
-                "question": question,
-                "answer": "No relevant context found for your question.",
-                "context": [],
-                "sources": []
+        with self.observability.trace_operation(
+            "rag_query",
+            attributes={
+                "query": question[:100],
+                "llm": Config.get_llm_display_name(),
+                "vector_store": Config.get_vector_store_display_name()
             }
+        ) as span:
+            try:
+                print(f"\n🔍 Processing question: {question}")
 
-        # Step 2: Format context
-        context = self.format_context(documents)
+                # Step 1: Retrieve relevant context
+                print("📚 Retrieving relevant context...")
+                documents = self.retrieve_context(question)
 
-        # Step 3: Generate answer
-        llm_name = Config.get_llm_display_name()
-        print(f"🤖 Generating answer with {llm_name}...")
-        answer = self.generate_answer(question, context)
+                if not documents:
+                    if span:
+                        span.set_attribute("no_context_found", True)
+                    return {
+                        "question": question,
+                        "answer": "No relevant context found for your question.",
+                        "context": [],
+                        "sources": []
+                    }
 
-        # Step 4: Extract sources
-        sources = [
-            {
-                "source": doc.metadata.get("source", "unknown"),
-                "topic": doc.metadata.get("topic", "unknown"),
-                "content": doc.page_content.strip()[:200] + "..."  # First 200 chars
-            }
-            for doc in documents
-        ]
+                # Step 2: Format context
+                context = self.format_context(documents)
 
-        return {
-            "question": question,
-            "answer": answer,
-            "context": documents,
-            "sources": sources
-        }
+                # Step 3: Generate answer
+                llm_name = Config.get_llm_display_name()
+                print(f"🤖 Generating answer with {llm_name}...")
+                answer = self.generate_answer(question, context)
+
+                # Step 4: Extract sources
+                sources = [
+                    {
+                        "source": doc.metadata.get("source", "unknown"),
+                        "topic": doc.metadata.get("topic", "unknown"),
+                        "content": doc.page_content.strip()[:200] + "..."  # First 200 chars
+                    }
+                    for doc in documents
+                ]
+
+                # Add span attributes
+                if span:
+                    span.set_attribute("num_sources", len(sources))
+                    span.set_attribute("answer_length", len(answer))
+
+                # Record overall query metric
+                duration_ms = (time.time() - start_time) * 1000
+                self.observability.record_metric(
+                    "query",
+                    duration_ms,
+                    {
+                        "llm": Config.LLM_PROVIDER,
+                        "vector_store": "pinecone" if Config.USE_PINECONE else "faiss",
+                        "num_sources": len(sources)
+                    }
+                )
+
+                return {
+                    "question": question,
+                    "answer": answer,
+                    "context": documents,
+                    "sources": sources
+                }
+
+            except Exception as e:
+                # Record error metric
+                self.observability.record_metric(
+                    "error",
+                    0,
+                    {"operation": "rag_query", "error": str(e)[:100]}
+                )
+                raise
 
     def display_result(self, result: Dict[str, any]) -> None:
         """

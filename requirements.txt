@@ -21,7 +21,11 @@ langchain-text-splitters>=0.0.1
 
 # Vector Store Options
 # chromadb>=0.4.0  # Requires pybind11 + compilation on Python 3.14
-faiss-cpu>=1.7.0  # Lightweight alternative, no compilation needed
+faiss-cpu>=1.7.0  # Local vector store, no compilation needed
+
+# Pinecone (Optional - for production cloud vector database)
+pinecone-client>=3.0.0  # Pinecone vector database client
+langchain-pinecone>=0.1.0  # LangChain integration for Pinecone
 
 # UI Framework
 streamlit>=1.30.0  # Web-based UI for RAG system
@@ -49,6 +53,18 @@ python-docx>=1.0.0  # DOCX file parsing
 # PostgreSQL Database (Optional - for persistent session storage)
 psycopg2-binary>=2.9.0  # PostgreSQL adapter for session storage (psycopg2)
 psycopg[binary]>=3.1.0  # PostgreSQL adapter for checkpoint storage (psycopg3)
+
+# Policy Engine (Optional - for agent behavior control)
+pyyaml>=6.0  # YAML configuration for policies
+
+# Redis Message Queue (Optional - for distributed task processing)
+redis>=5.0.0  # Redis client for message queue
+
+# OpenTelemetry (Optional - for observability and monitoring)
+opentelemetry-api>=1.20.0  # OpenTelemetry API
+opentelemetry-sdk>=1.20.0  # OpenTelemetry SDK
+opentelemetry-exporter-otlp>=1.20.0  # OTLP exporter for Jaeger, Honeycomb, etc.
+opentelemetry-exporter-jaeger>=1.20.0  # Jaeger exporter (optional)
 
 # ===== INSTALL INSTRUCTIONS =====
 # If you get build errors, try:

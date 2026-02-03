@@ -1,10 +1,11 @@
 """Document management tool for RAG system."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 from .base_tool import BaseTool
 
 if TYPE_CHECKING:
     from src.vector_store import VectorStoreManager
+    from src.document_manager import DocumentManager
 
 
 class DocumentManagementTool(BaseTool):
@@ -13,14 +14,16 @@ class DocumentManagementTool(BaseTool):
 
     Provides information about indexed documents, vector store statistics,
     and document metadata.
+
+    Supports both FAISS (VectorStoreManager) and Pinecone (DocumentManager) backends.
     """
 
-    def __init__(self, vector_store_manager: 'VectorStoreManager'):
+    def __init__(self, vector_store_manager: Union['VectorStoreManager', 'DocumentManager']):
         """
         Initialize document management tool.
 
         Args:
-            vector_store_manager: Vector store manager instance
+            vector_store_manager: Vector store manager or document manager instance
         """
         super().__init__()
         self.vector_store = vector_store_manager
@@ -65,7 +68,27 @@ Use for understanding what documents are available or checking indexing status."
     def _get_stats(self) -> str:
         """Get vector store statistics."""
         try:
-            # Get vector store
+            # Check if using DocumentManager (unified interface)
+            if hasattr(self.vector_store, 'get_stats'):
+                # DocumentManager
+                stats = self.vector_store.get_stats()
+
+                if stats.get('backend') == 'pinecone':
+                    return f"""Vector Store Statistics:
+- Backend: Pinecone (Cloud)
+- Total vectors: {stats['total_vectors']}
+- Index: {stats['index_name']}
+- Namespace: {stats['namespace']}
+- Dimension: {stats['dimension']}
+- Status: Active"""
+                else:
+                    return f"""Vector Store Statistics:
+- Backend: FAISS (Local)
+- Total vectors: {stats.get('total_vectors', 'unknown')}
+- Dimension: {stats.get('dimension', 'unknown')}
+- Status: {stats.get('status', 'active')}"""
+
+            # Legacy VectorStoreManager (FAISS)
             vectorstore = self.vector_store.vector_store
 
             if not vectorstore:
@@ -76,26 +99,25 @@ Use for understanding what documents are available or checking indexing status."
             num_vectors = index.ntotal
 
             return f"""Vector Store Statistics:
+- Backend: FAISS (Local)
 - Total vectors: {num_vectors}
-- Index type: FAISS
 - Status: Active
 - Embedding dimension: {index.d if hasattr(index, 'd') else 'Unknown'}"""
 
-        except AttributeError as e:
+        except Exception as e:
             return f"Vector store statistics not available: {str(e)}"
 
     def _list_documents(self) -> str:
-        """List indexed documents (approximation)."""
+        """List indexed documents."""
         try:
-            # Get all documents from vector store
-            # Note: FAISS doesn't store metadata easily, so this is a workaround
+            # Get vector store
             vectorstore = self.vector_store.vector_store
 
             if not vectorstore:
                 return "Vector store not initialized"
 
             # Get a sample to infer document sources
-            # This is an approximation - real implementation would need metadata tracking
+            # Note: This queries for empty string to get any docs
             sample_docs = vectorstore.similarity_search("", k=100)
 
             # Extract unique sources

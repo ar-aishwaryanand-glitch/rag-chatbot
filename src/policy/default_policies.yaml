@@ -1,0 +1,233 @@
+# Default Policy Configuration for RAG Agent
+#
+# This file defines production-ready policies for:
+# - Tool usage control
+# - Rate limiting
+# - Content filtering
+# - Cost management
+# - Access control
+
+# ============================================================================
+# TOOL USAGE POLICIES
+# ============================================================================
+
+tool_policies:
+  - rule_id: allow_standard_tools
+    name: Allow Standard Tools
+    description: Allow standard RAG and search tools
+    action: allow
+    enabled: true
+    priority: 100
+    allowed_tools:
+      - search_web
+      - search_documents
+      - retrieve_context
+      - calculator
+      - web_agent
+      - python_executor
+    max_executions_per_session: 100
+
+  - rule_id: block_dangerous_tools
+    name: Block Dangerous Tools
+    description: Block tools that could compromise security
+    action: deny
+    enabled: true
+    priority: 200
+    blocked_tools:
+      - system_command
+      - file_delete
+      - database_drop
+      - execute_shell
+
+  - rule_id: require_approval_for_code
+    name: Require Approval for Code Execution
+    description: Sensitive code execution requires approval
+    action: require_approval
+    enabled: false  # Disabled by default, enable for production
+    priority: 150
+    require_approval_for_tools:
+      - python_executor
+      - code_executor
+
+  - rule_id: limit_web_agent_usage
+    name: Limit Web Agent Usage
+    description: Prevent excessive web scraping
+    action: allow
+    enabled: true
+    priority: 50
+    max_executions_per_tool:
+      web_agent: 20
+
+# ============================================================================
+# RATE LIMIT POLICIES
+# ============================================================================
+
+rate_limit_policies:
+  - rule_id: standard_rate_limit
+    name: Standard Rate Limit
+    description: Prevent API abuse with reasonable limits
+    action: throttle
+    enabled: true
+    priority: 100
+    max_requests_per_minute: 60
+    max_requests_per_hour: 1000
+    max_requests_per_day: 10000
+    max_tokens_per_minute: 100000
+    max_tokens_per_hour: 1000000
+    cooldown_period_seconds: 5
+
+  - rule_id: strict_rate_limit
+    name: Strict Rate Limit
+    description: Aggressive rate limiting for suspected abuse
+    action: throttle
+    enabled: false  # Enable manually when needed
+    priority: 200
+    max_requests_per_minute: 10
+    max_requests_per_hour: 100
+    max_tokens_per_minute: 10000
+
+# ============================================================================
+# CONTENT FILTERING POLICIES
+# ============================================================================
+
+content_policies:
+  - rule_id: basic_content_filter
+    name: Basic Content Filter
+    description: Filter inappropriate content and enforce length limits
+    action: deny
+    enabled: true
+    priority: 100
+    max_input_length: 20000
+    max_output_length: 100000
+    allow_code_execution: true
+    allow_file_access: false
+    allow_network_access: true
+    pii_detection_enabled: false
+    profanity_filter_enabled: false
+
+  - rule_id: block_malicious_keywords
+    name: Block Malicious Keywords
+    description: Block known malicious patterns
+    action: deny
+    enabled: true
+    priority: 200
+    blocked_keywords:
+      - "DROP TABLE"
+      - "DELETE FROM"
+      - "rm -rf"
+      - "format c:"
+    blocked_patterns:
+      - "(?i)eval\\s*\\("
+      - "(?i)exec\\s*\\("
+      - "(?i)__import__"
+
+  - rule_id: production_content_filter
+    name: Production Content Filter
+    description: Strict content filtering for production
+    action: deny
+    enabled: false  # Enable in production
+    priority: 150
+    max_input_length: 10000
+    max_output_length: 50000
+    allow_code_execution: false
+    allow_file_access: false
+    pii_detection_enabled: true
+    profanity_filter_enabled: true
+
+# ============================================================================
+# COST CONTROL POLICIES
+# ============================================================================
+
+cost_policies:
+  - rule_id: development_cost_limit
+    name: Development Cost Limit
+    description: Reasonable cost limits for development
+    action: warn
+    enabled: true
+    priority: 100
+    max_cost_per_request: 0.50
+    max_cost_per_session: 5.00
+    max_cost_per_day: 20.00
+    cost_alert_threshold: 10.00
+    token_cost_per_1k: 0.001
+
+  - rule_id: production_cost_limit
+    name: Production Cost Limit
+    description: Strict cost control for production
+    action: deny
+    enabled: false  # Enable in production
+    priority: 200
+    max_cost_per_request: 0.10
+    max_cost_per_session: 1.00
+    max_cost_per_day: 50.00
+    max_cost_per_user: 100.00
+    cost_alert_threshold: 40.00
+    token_cost_per_1k: 0.002
+
+# ============================================================================
+# ACCESS CONTROL POLICIES
+# ============================================================================
+
+access_policies:
+  - rule_id: open_access
+    name: Open Access
+    description: Allow all users (development mode)
+    action: allow
+    enabled: true
+    priority: 50
+    allowed_users: []
+    blocked_users: []
+
+  - rule_id: block_specific_users
+    name: Block Specific Users
+    description: Block known abusive users
+    action: deny
+    enabled: true
+    priority: 200
+    blocked_users:
+      # Add user IDs to block
+      # - "abusive_user_1"
+      # - "spam_bot_2"
+
+  - rule_id: whitelist_users
+    name: Whitelist Users Only
+    description: Allow only approved users (production)
+    action: deny
+    enabled: false  # Enable for production
+    priority: 150
+    allowed_users:
+      # Add approved user IDs
+      # - "admin@company.com"
+      # - "user1@company.com"
+    allowed_roles:
+      - "admin"
+      - "developer"
+      - "analyst"
+
+# ============================================================================
+# CONFIGURATION NOTES
+# ============================================================================
+#
+# Priority System:
+#   - Higher priority rules (200) are evaluated before lower priority (50)
+#   - DENY actions take precedence over ALLOW
+#   - Use priorities to create policy hierarchies
+#
+# Actions:
+#   - allow: Permit the action
+#   - deny: Block the action completely
+#   - warn: Log warning but allow
+#   - throttle: Rate limit the action
+#   - require_approval: Require manual approval
+#
+# Environment-Specific Policies:
+#   - Development: Relaxed limits, warnings instead of blocks
+#   - Production: Strict limits, aggressive blocking, audit logging
+#
+# Customization:
+#   1. Copy this file to config/policies.yaml
+#   2. Modify limits for your use case
+#   3. Enable/disable policies based on environment
+#   4. Add custom policies using the same structure
+#
+# ============================================================================

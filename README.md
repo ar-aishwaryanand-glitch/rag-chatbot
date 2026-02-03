@@ -15,7 +15,8 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - **Document Upload**: Support for PDF, TXT, and MD files
 - **Source Attribution**: View retrieved context and sources for each answer
 - **Configurable Settings**: Adjust temperature, top-k results, and chunking parameters
-- **FAISS Vector Store**: Fast similarity search with local caching
+- **Flexible Vector Store**: FAISS (local, free) or Pinecone (cloud, production-grade)
+- **Easy Migration**: One-command migration from FAISS to Pinecone
 
 ### 🆕 Phase 3: Agent Features
 - **🧠 Memory System**: Conversation memory + episodic memory across sessions
@@ -36,9 +37,61 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - **🌐 URL Content Indexing**: Paste any URL to fetch, extract, and index web content directly
 - **🗂️ Multi-Format Support**: Parse and index documents in multiple formats
 
+### 🛡️ Policy Engine (Production-Ready!)
+- **🔒 Tool Usage Control**: Define which tools can be used and when
+- **⏱️ Rate Limiting**: Prevent API abuse with request/token limits
+- **🔍 Content Filtering**: Block inappropriate or malicious content
+- **💰 Cost Management**: Set spending limits per request/session/day
+- **👥 Access Control**: Manage user permissions and roles
+- **📊 Audit Trail**: Complete record of policy violations with PostgreSQL storage
+- **⚙️ Configurable Policies**: YAML-based policy definitions with priority system
+- **🎯 Multiple Actions**: Allow, deny, warn, throttle, or require approval
+
+### 📦 Redis Message Queue (Distributed Processing!)
+- **🔄 Async Execution**: Submit agent queries for background processing
+- **⚡ Priority Queues**: LOW, NORMAL, HIGH, URGENT task prioritization
+- **👷 Worker Pool**: Multiple workers for parallel task execution
+- **📊 Task Tracking**: Real-time status monitoring and result retrieval
+- **🔁 Auto Retry**: Configurable retry logic for failed tasks
+- **⏰ Task Scheduling**: Schedule tasks for future execution
+- **📈 Queue Stats**: Monitor pending, running, completed, and failed tasks
+- **🔔 Pub/Sub Events**: Real-time notifications for task state changes
+
+### 🗄️ Pinecone Vector Database (Production-Grade!)
+- **☁️ Cloud-Native**: Serverless vector database with auto-scaling
+- **🔍 Advanced Search**: Metadata filtering and hybrid search support
+- **🌐 Global Distribution**: Deploy across AWS, GCP, or Azure regions
+- **📊 Unlimited Scale**: Handle millions of vectors effortlessly
+- **🔒 Enterprise-Ready**: 99.9% uptime SLA with managed infrastructure
+- **🔄 Easy Migration**: One-command migration from FAISS to Pinecone
+- **🏷️ Namespaces**: Multi-tenancy support for organizing vectors
+- **📈 Real-time Analytics**: Monitor usage, performance, and costs
+
+### 🔭 OpenTelemetry Observability (Production Monitoring!)
+- **📊 Distributed Tracing**: Full visibility into RAG pipeline and agent execution
+- **⏱️ Performance Metrics**: Track latency, throughput, and error rates
+- **🔍 Request Tracking**: Trace every query from start to finish
+- **📈 Custom Dashboards**: Visualize performance with Jaeger, Honeycomb, Grafana
+- **🚨 Proactive Alerts**: Get notified of issues before users complain
+- **🎯 Bottleneck Detection**: Identify slow operations and optimize
+- **📊 Usage Analytics**: Understand user behavior and patterns
+- **🔗 Context Propagation**: Follow requests across all components
+- **💾 Multiple Exporters**: Console, OTLP (Jaeger/Honeycomb/DataDog), Jaeger direct
+- **🎛️ Configurable Sampling**: Control overhead with smart sampling
+
 ## 🎉 What's New
 
-### Latest Updates (Phase 4)
+### Latest Updates
+
+**🔭 OpenTelemetry Observability** (Feb 2026)
+- Comprehensive monitoring with distributed tracing
+- Performance metrics for all operations (RAG queries, agent actions, tool calls)
+- Multiple backend support: Jaeger, Honeycomb, DataDog, Grafana Cloud
+- Custom instrumentation with decorators
+- Production-ready with sampling and filtering
+- Easy setup: enable in .env and connect to your observability backend
+
+### Phase 4 Updates
 
 **🌐 Web Agent Tool** (Feb 2026)
 - Autonomous web browsing with Playwright
@@ -69,7 +122,38 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, Hug
 - Better tool selection accuracy
 - Performance metrics and tracking
 
-See [PHASE4_WEBAGENT.md](PHASE4_WEBAGENT.md) for detailed documentation.
+**🛡️ Policy Engine** (Feb 2026)
+- Production-grade behavior control and governance
+- Tool usage policies with whitelist/blacklist
+- Rate limiting (requests/minute/hour/day and token limits)
+- Content filtering with keyword and regex blocking
+- Cost management with spending limits
+- Access control with user/role permissions
+- PostgreSQL-backed audit trail
+- YAML-based policy configuration
+- Priority-based policy evaluation
+
+**📦 Redis Message Queue** (Feb 2026)
+- Distributed agent coordination with Redis
+- Async task execution with priority queues (LOW/NORMAL/HIGH/URGENT)
+- Multi-worker support for parallel processing
+- Task status tracking and result caching
+- Auto-retry logic for failed tasks
+- Task scheduling for delayed execution
+- Real-time queue monitoring dashboard
+- Pub/sub events for task notifications
+
+**🗄️ Pinecone Vector Database** (Feb 2026)
+- Production-grade cloud vector database
+- Seamless migration from FAISS to Pinecone
+- Unified DocumentManager interface supporting both backends
+- Advanced metadata filtering for precise searches
+- Multi-namespace support for multi-tenancy
+- Serverless auto-scaling infrastructure
+- Global deployment across AWS/GCP/Azure
+- Comprehensive migration guide and tools
+
+See [PHASE4_WEBAGENT.md](PHASE4_WEBAGENT.md), [POLICY_ENGINE_GUIDE.md](POLICY_ENGINE_GUIDE.md), [REDIS_QUEUE_GUIDE.md](REDIS_QUEUE_GUIDE.md), and [PINECONE_MIGRATION_GUIDE.md](PINECONE_MIGRATION_GUIDE.md) for detailed documentation.
 
 ## Quick Start
 
@@ -341,6 +425,93 @@ EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2
 EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 ```
 
+### Vector Database
+
+Choose between FAISS (local, free) and Pinecone (cloud, production):
+
+```bash
+# FAISS (default - local, free)
+USE_PINECONE=false
+
+# Pinecone (production - scalable, managed)
+USE_PINECONE=true
+PINECONE_API_KEY=your_pinecone_api_key  # Get from https://app.pinecone.io
+PINECONE_INDEX_NAME=rag-agent
+PINECONE_REGION=us-east-1  # Choose region closest to your users
+PINECONE_CLOUD=aws  # aws, gcp, or azure
+```
+
+**Migration from FAISS to Pinecone:**
+
+```bash
+# 1. Configure Pinecone in .env (keep USE_PINECONE=false)
+# 2. Run migration script
+python migrate_to_pinecone.py
+
+# 3. Enable Pinecone
+# Set USE_PINECONE=true in .env
+# 4. Restart application
+```
+
+See [Pinecone Migration Guide](PINECONE_MIGRATION_GUIDE.md) for detailed instructions.
+
+### Observability
+
+Enable OpenTelemetry monitoring for production deployments:
+
+```bash
+# Enable observability
+ENABLE_OBSERVABILITY=true
+
+# Service configuration
+OTEL_SERVICE_NAME=rag-agent
+OTEL_ENVIRONMENT=production  # development, staging, production
+
+# Choose exporter type
+OTEL_EXPORTER_TYPE=console  # console, otlp, jaeger
+
+# For OTLP exporters (Jaeger, Honeycomb, DataDog, Grafana Cloud)
+OTEL_EXPORTER_ENDPOINT=http://localhost:4317
+# OTEL_EXPORTER_HEADERS=x-honeycomb-team=YOUR_API_KEY  # For Honeycomb
+
+# For Jaeger exporter
+# JAEGER_HOST=localhost
+# JAEGER_PORT=6831
+```
+
+**Quick Start with Jaeger:**
+
+```bash
+# Start Jaeger with Docker
+docker run -d --name jaeger \
+  -e COLLECTOR_OTLP_ENABLED=true \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+
+# Configure app
+ENABLE_OBSERVABILITY=true
+OTEL_EXPORTER_TYPE=otlp
+OTEL_EXPORTER_ENDPOINT=http://localhost:4317
+
+# View traces at http://localhost:16686
+```
+
+**What gets traced:**
+- RAG query end-to-end latency
+- Document retrieval performance
+- LLM generation time
+- Agent tool execution
+- Error tracking
+
+**Metrics collected:**
+- Query throughput (queries/second)
+- Average latency (p50, p95, p99)
+- Error rates
+- Tool usage statistics
+
+See [Observability Guide](OBSERVABILITY_GUIDE.md) for detailed setup with Honeycomb, DataDog, and Grafana Cloud.
+
 ## Performance
 
 - **LLM Inference**: 10-100x faster than traditional APIs (via Groq)
@@ -356,7 +527,11 @@ EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 - [Adding Documents](ADDING_YOUR_DOCUMENTS.md) - Document processing guide
 
 ### Technical Documentation
+- [OpenTelemetry Observability Guide](OBSERVABILITY_GUIDE.md) - **NEW!** Production monitoring and tracing
 - [Phase 4: Web Agent](PHASE4_WEBAGENT.md) - **NEW!** Autonomous web browsing
+- [Policy Engine Guide](POLICY_ENGINE_GUIDE.md) - **NEW!** Behavior control and governance
+- [Redis Queue Guide](REDIS_QUEUE_GUIDE.md) - **NEW!** Distributed task processing
+- [Pinecone Migration Guide](PINECONE_MIGRATION_GUIDE.md) - **NEW!** Production vector database
 - [Phase 3 Complete](PHASE3_COMPLETE.md) - Phase 3 implementation summary
 - [Phase 3 Design](PHASE3_DESIGN.md) - Phase 3 architecture and design
 - [Project Overview](PROJECT_OVERVIEW.md) - Technical architecture

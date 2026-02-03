@@ -1,7 +1,7 @@
 """Agent executor with Phase 3 enhancements: Memory + Self-Reflection."""
 
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage
 
@@ -9,6 +9,14 @@ from .agent_state import AgentState
 from .tool_registry import ToolRegistry
 from .memory import MemoryManager
 from .reflection import ReflectionModule, LearningModule
+from src.observability import get_observability
+
+# Policy Engine imports
+try:
+    from src.policy import PolicyEngine, PolicyEvaluationContext, PolicyViolation, PolicyAction
+    POLICY_ENGINE_AVAILABLE = True
+except ImportError:
+    POLICY_ENGINE_AVAILABLE = False
 
 
 class AgentExecutorV3:
@@ -30,7 +38,8 @@ class AgentExecutorV3:
         config,
         enable_memory: bool = True,
         enable_reflection: bool = True,
-        enable_checkpoints: bool = True
+        enable_checkpoints: bool = True,
+        enable_policy_engine: bool = True
     ):
         """
         Initialize the enhanced agent executor.
@@ -42,10 +51,12 @@ class AgentExecutorV3:
             enable_memory: Enable memory features
             enable_reflection: Enable reflection features
             enable_checkpoints: Enable checkpoint storage for crash recovery
+            enable_policy_engine: Enable policy engine for behavior control
         """
         self.llm = llm
         self.tool_registry = tool_registry
         self.config = config
+        self.observability = get_observability()
 
         # Phase 3 features
         self.enable_memory = enable_memory
@@ -75,6 +86,17 @@ class AgentExecutorV3:
             except Exception as e:
                 print(f"⚠️  Checkpointing disabled: {e}")
                 self.checkpoint_manager = None
+
+        # Initialize policy engine
+        self.policy_engine = None
+        if enable_policy_engine and POLICY_ENGINE_AVAILABLE:
+            try:
+                self.policy_engine = PolicyEngine()
+                if not self.policy_engine.is_enabled():
+                    self.policy_engine = None
+            except Exception as e:
+                print(f"⚠️  Policy engine disabled: {e}")
+                self.policy_engine = None
 
         self.graph = self._build_graph()
 
@@ -213,22 +235,61 @@ Respond with ONLY the tool name, nothing else."""
             state['last_error'] = f"Tool '{tool_name}' not found"
             return state
 
+        # Policy enforcement: Check if tool usage is allowed
+        if self.policy_engine:
+            try:
+                session_id = state.get('execution_metadata', {}).get('session_id', 'default')
+                context = PolicyEvaluationContext(
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    input_content=state['query']
+                )
+
+                # Evaluate tool usage policy
+                decision = self.policy_engine.evaluate_tool_usage(context)
+
+                if not decision.allowed:
+                    state['last_error'] = decision.message or f"Tool '{tool_name}' is blocked by policy"
+                    state['policy_violation'] = True
+                    print(f"🚫 Policy violation: {state['last_error']}")
+                    return state
+
+                if decision.warnings:
+                    print(f"⚠️  Policy warnings: {', '.join(decision.warnings)}")
+
+                if decision.action == PolicyAction.REQUIRE_APPROVAL:
+                    state['last_error'] = f"Tool '{tool_name}' requires manual approval"
+                    state['requires_approval'] = True
+                    return state
+
+            except Exception as e:
+                print(f"⚠️  Policy check failed: {e}")
+                # Continue execution if policy check fails (fail-open for availability)
+
         try:
-            # Execute tool (same logic as original)
+            # Execute tool with observability
             query = state['query']
             start_time = time.time()
 
-            if tool_name == "calculator":
-                prompt = f"""Extract ONLY the mathematical expression from this query. Return just the expression, nothing else.
+            with self.observability.trace_operation(
+                "agent_tool_execution",
+                attributes={
+                    "tool_name": tool_name,
+                    "query": query[:100],
+                    "iteration": state['iteration']
+                }
+            ) as span:
+                if tool_name == "calculator":
+                    prompt = f"""Extract ONLY the mathematical expression from this query. Return just the expression, nothing else.
 
 Query: {query}
 
 Expression (numbers and operators only):"""
-                response = self.llm.invoke([HumanMessage(content=prompt)])
-                expression = response.content.strip()
-                result = tool.run(expression=expression)
+                    response = self.llm.invoke([HumanMessage(content=prompt)])
+                    expression = response.content.strip()
+                    result = tool.run(expression=expression)
 
-            elif tool_name == "python_executor":
+                elif tool_name == "python_executor":
                 prompt = f"""Write Python code to accomplish this task. Return ONLY the code, no explanations.
 
 Task: {query}
@@ -322,6 +383,25 @@ Response:"""
                 'duration': duration
             })
 
+            # Record metrics
+            self.observability.record_metric(
+                "agent_action",
+                duration * 1000,  # Convert to ms
+                {
+                    "tool_name": tool_name,
+                    "success": result.success,
+                    "iteration": state['iteration']
+                }
+            )
+
+            # Record tool execution in policy engine for tracking
+            if self.policy_engine:
+                try:
+                    session_id = state.get('execution_metadata', {}).get('session_id', 'default')
+                    self.policy_engine.record_tool_execution(session_id, tool_name)
+                except Exception as e:
+                    print(f"⚠️  Failed to record tool execution: {e}")
+
             # Reflect on tool selection if enabled
             if self.enable_reflection and self.reflection_module:
                 reflection = self.reflection_module.reflect_on_tool_selection(
@@ -336,6 +416,17 @@ Response:"""
                 self.learning_module.learn_from_reflection(reflection)
 
         except Exception as e:
+            # Record error metric
+            self.observability.record_metric(
+                "error",
+                0,
+                {
+                    "operation": "agent_tool_execution",
+                    "tool_name": tool_name,
+                    "error": str(e)[:100]
+                }
+            )
+
             state['last_error'] = f"Tool execution error: {str(e)}"
             state['tool_results'].append({
                 'tool': tool_name,
@@ -409,17 +500,48 @@ Response:"""
 
         return state
 
-    def execute(self, query: str, thread_id: str = None) -> Dict[str, Any]:
+    def execute(self, query: str, thread_id: str = None, session_id: str = None) -> Dict[str, Any]:
         """
         Execute the agent for a given query (synchronous).
 
         Args:
             query: User question
             thread_id: Optional thread ID for checkpoint storage (enables crash recovery)
+            session_id: Optional session ID for policy tracking
 
         Returns:
             Final state dictionary with answer and metadata
         """
+        # Policy enforcement: Check rate limits and content policies
+        if self.policy_engine:
+            try:
+                context = PolicyEvaluationContext(
+                    session_id=session_id or thread_id or 'default',
+                    input_content=query,
+                    token_count=len(query.split())  # Rough estimate
+                )
+
+                # Evaluate all policies (rate limit, content, etc.)
+                decision = self.policy_engine.evaluate_all(context)
+
+                if not decision.allowed:
+                    # Policy violation - return error
+                    return {
+                        'query': query,
+                        'final_answer': decision.message or 'Request blocked by policy',
+                        'current_phase': 'policy_violation',
+                        'policy_violation': True,
+                        'violated_rules': [r.name for r in decision.violated_rules],
+                        'execution_metadata': {'duration': 0}
+                    }
+
+                if decision.warnings:
+                    print(f"⚠️  Policy warnings: {', '.join(decision.warnings)}")
+
+            except Exception as e:
+                print(f"⚠️  Policy evaluation failed: {e}")
+                # Continue execution if policy check fails (fail-open)
+
         # Initialize state
         initial_state = {
             'messages': [HumanMessage(content=query)],
@@ -435,7 +557,7 @@ Response:"""
             'last_error': None,
             'memory_context': None,
             'start_time': time.time(),
-            'execution_metadata': {}
+            'execution_metadata': {'session_id': session_id or thread_id or 'default'}
         }
 
         # Prepare config for checkpointing
@@ -546,3 +668,225 @@ Response:"""
         if self.enable_reflection and self.learning_module:
             return self.learning_module.get_overall_performance()
         return {}
+
+    def get_policy_violations(self, session_id: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get policy violations for a session.
+
+        Args:
+            session_id: Optional session ID to filter by
+            limit: Maximum number of violations to return
+
+        Returns:
+            List of violation records
+        """
+        if not self.policy_engine:
+            return []
+
+        try:
+            violations = self.policy_engine.get_violations(session_id=session_id, limit=limit)
+            return [
+                {
+                    'violation_id': v.violation_id,
+                    'rule_id': v.rule_id,
+                    'policy_type': v.policy_type.value,
+                    'action_taken': v.action_taken.value,
+                    'details': v.violation_details,
+                    'timestamp': v.timestamp.isoformat()
+                }
+                for v in violations
+            ]
+        except Exception as e:
+            print(f"⚠️  Failed to get policy violations: {e}")
+            return []
+
+    def get_active_policies(self, policy_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Get active policies.
+
+        Args:
+            policy_type: Optional policy type filter
+
+        Returns:
+            List of active policies
+        """
+        if not self.policy_engine:
+            return []
+
+        try:
+            from src.policy import PolicyType
+            ptype = PolicyType(policy_type) if policy_type else None
+            policies = self.policy_engine.list_policies(policy_type=ptype)
+            return [
+                {
+                    'rule_id': p.rule_id,
+                    'name': p.name,
+                    'description': p.description,
+                    'policy_type': p.policy_type.value,
+                    'action': p.action.value,
+                    'enabled': p.enabled,
+                    'priority': p.priority
+                }
+                for p in policies
+            ]
+        except Exception as e:
+            print(f"⚠️  Failed to get policies: {e}")
+            return []
+
+    # =========================================================================
+    # ASYNC EXECUTION (Message Queue Integration)
+    # =========================================================================
+
+    def execute_async(
+        self,
+        query: str,
+        session_id: str = None,
+        thread_id: str = None,
+        priority: str = "normal"
+    ) -> str:
+        """
+        Execute agent query asynchronously using message queue.
+
+        Args:
+            query: User question
+            session_id: Optional session ID
+            thread_id: Optional thread ID for checkpointing
+            priority: Task priority (low, normal, high, urgent)
+
+        Returns:
+            Task ID for tracking
+        """
+        try:
+            from src.queue import get_task_queue, AgentTask, TaskPriority, TaskType
+
+            task_queue = get_task_queue()
+
+            if not task_queue.is_available():
+                raise RuntimeError("Task queue not available. Enable USE_REDIS_QUEUE=true")
+
+            # Map priority string to enum
+            priority_map = {
+                'low': TaskPriority.LOW,
+                'normal': TaskPriority.NORMAL,
+                'high': TaskPriority.HIGH,
+                'urgent': TaskPriority.URGENT
+            }
+
+            task_priority = priority_map.get(priority.lower(), TaskPriority.NORMAL)
+
+            # Create agent task
+            task = AgentTask(
+                task_type=TaskType.AGENT_QUERY,
+                payload={
+                    'query': query,
+                    'thread_id': thread_id
+                },
+                priority=task_priority,
+                session_id=session_id,
+                metadata={
+                    'source': 'agent_executor',
+                    'async': True
+                }
+            )
+
+            # Submit to queue
+            task_id = task_queue.submit_task(task)
+
+            print(f"📤 Task submitted: {task_id} ({priority} priority)")
+
+            return task_id
+
+        except Exception as e:
+            print(f"❌ Failed to submit async task: {e}")
+            raise
+
+    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get status of an async task.
+
+        Args:
+            task_id: Task ID from execute_async
+
+        Returns:
+            Task status dictionary or None
+        """
+        try:
+            from src.queue import get_task_queue
+
+            task_queue = get_task_queue()
+
+            if not task_queue.is_available():
+                return None
+
+            task = task_queue.get_task(task_id)
+
+            if task:
+                return {
+                    'task_id': task.task_id,
+                    'status': task.status.value,
+                    'created_at': task.created_at.isoformat(),
+                    'started_at': task.started_at.isoformat() if task.started_at else None,
+                    'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+                    'worker_id': task.worker_id,
+                    'error': task.error
+                }
+
+            return None
+
+        except Exception as e:
+            print(f"⚠️  Failed to get task status: {e}")
+            return None
+
+    def get_task_result(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get result of a completed async task.
+
+        Args:
+            task_id: Task ID from execute_async
+
+        Returns:
+            Task result dictionary or None
+        """
+        try:
+            from src.queue import get_task_queue
+
+            task_queue = get_task_queue()
+
+            if not task_queue.is_available():
+                return None
+
+            result = task_queue.get_result(task_id)
+
+            if result:
+                return {
+                    'task_id': result.task_id,
+                    'status': result.status.value,
+                    'result': result.result,
+                    'error': result.error,
+                    'duration': result.duration,
+                    'completed_at': result.completed_at.isoformat()
+                }
+
+            return None
+
+        except Exception as e:
+            print(f"⚠️  Failed to get task result: {e}")
+            return None
+
+    def cancel_task(self, task_id: str):
+        """
+        Cancel a pending async task.
+
+        Args:
+            task_id: Task ID to cancel
+        """
+        try:
+            from src.queue import get_task_queue
+
+            task_queue = get_task_queue()
+
+            if task_queue.is_available():
+                task_queue.cancel_task(task_id)
+
+        except Exception as e:
+            print(f"⚠️  Failed to cancel task: {e}")

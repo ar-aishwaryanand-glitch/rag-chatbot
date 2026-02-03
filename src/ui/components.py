@@ -551,3 +551,284 @@ def show_success(success_msg: str):
         success_msg: Success message to display
     """
     st.success(f"✅ {success_msg}")
+
+
+# ==============================================================================
+# POLICY ENGINE UI COMPONENTS
+# ==============================================================================
+
+def render_policy_dashboard(agent_executor):
+    """
+    Render policy engine dashboard in sidebar.
+
+    Args:
+        agent_executor: AgentExecutorV3 instance with policy engine
+    """
+    if not agent_executor or not hasattr(agent_executor, 'policy_engine'):
+        return
+
+    policy_engine = agent_executor.policy_engine
+    if not policy_engine or not policy_engine.is_enabled():
+        return
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🛡️ Policy Engine")
+
+    with st.sidebar.expander("📊 Policy Status", expanded=False):
+        # Get active policies
+        policies = agent_executor.get_active_policies()
+
+        if policies:
+            # Group by policy type
+            policy_types = {}
+            for policy in policies:
+                ptype = policy['policy_type']
+                if ptype not in policy_types:
+                    policy_types[ptype] = []
+                policy_types[ptype].append(policy)
+
+            # Display by type
+            for ptype, type_policies in policy_types.items():
+                enabled_count = sum(1 for p in type_policies if p['enabled'])
+                st.markdown(f"**{ptype.replace('_', ' ').title()}:** {enabled_count}/{len(type_policies)} active")
+
+            st.caption(f"Total: {len(policies)} policies loaded")
+        else:
+            st.info("No policies configured")
+
+    with st.sidebar.expander("⚠️ Policy Violations", expanded=False):
+        # Get recent violations
+        session_id = st.session_state.get('current_session_id')
+        violations = agent_executor.get_policy_violations(session_id=session_id, limit=10)
+
+        if violations:
+            st.warning(f"{len(violations)} violation(s) detected")
+
+            for v in violations[:5]:  # Show last 5
+                st.markdown(f"""
+                **{v['policy_type']}**
+                {v['details']}
+                *Action: {v['action_taken']}*
+                """)
+                st.caption(f"ID: {v['violation_id'][:8]}... | {v['timestamp']}")
+                st.markdown("---")
+        else:
+            st.success("No violations")
+
+
+def render_policy_settings(agent_executor):
+    """
+    Render policy engine settings panel.
+
+    Args:
+        agent_executor: AgentExecutorV3 instance with policy engine
+    """
+    if not agent_executor or not hasattr(agent_executor, 'policy_engine'):
+        st.info("Policy engine not available")
+        return
+
+    policy_engine = agent_executor.policy_engine
+    if not policy_engine or not policy_engine.is_enabled():
+        st.info("Policy engine is disabled. Set USE_POLICY_ENGINE=true in .env to enable.")
+        return
+
+    st.subheader("🛡️ Policy Engine Settings")
+
+    # Get all policies
+    policies = agent_executor.get_active_policies()
+
+    if not policies:
+        st.warning("No policies configured. Add policies in `src/policy/default_policies.yaml`")
+        return
+
+    # Policy type filter
+    policy_type = st.selectbox(
+        "Filter by Type",
+        options=["all"] + list(set(p['policy_type'] for p in policies)),
+        format_func=lambda x: x.replace('_', ' ').title() if x != "all" else "All Policies"
+    )
+
+    filtered_policies = policies if policy_type == "all" else [
+        p for p in policies if p['policy_type'] == policy_type
+    ]
+
+    # Display policies
+    for policy in filtered_policies:
+        with st.expander(f"**{policy['name']}** ({'✅ Enabled' if policy['enabled'] else '❌ Disabled'})", expanded=False):
+            st.markdown(f"**Description:** {policy['description']}")
+            st.markdown(f"**Type:** {policy['policy_type'].replace('_', ' ').title()}")
+            st.markdown(f"**Action:** {policy['action'].replace('_', ' ').title()}")
+            st.markdown(f"**Priority:** {policy['priority']}")
+            st.caption(f"Rule ID: {policy['rule_id']}")
+
+
+def render_policy_violations_table(agent_executor, session_id: str = None):
+    """
+    Render table of policy violations.
+
+    Args:
+        agent_executor: AgentExecutorV3 instance
+        session_id: Optional session ID filter
+    """
+    if not agent_executor or not hasattr(agent_executor, 'policy_engine'):
+        return
+
+    violations = agent_executor.get_policy_violations(session_id=session_id, limit=50)
+
+    if not violations:
+        st.info("No policy violations recorded")
+        return
+
+    st.subheader("⚠️ Policy Violations")
+
+    # Create DataFrame for table display
+    import pandas as pd
+
+    df = pd.DataFrame([
+        {
+            'Time': v['timestamp'][:19],
+            'Type': v['policy_type'].replace('_', ' ').title(),
+            'Action': v['action_taken'].replace('_', ' ').title(),
+            'Details': v['details'][:50] + '...' if len(v['details']) > 50 else v['details']
+        }
+        for v in violations
+    ])
+
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # Download violations as CSV
+    csv = df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Violations CSV",
+        data=csv,
+        file_name="policy_violations.csv",
+        mime="text/csv"
+    )
+
+
+# ==============================================================================
+# TASK QUEUE UI COMPONENTS
+# ==============================================================================
+
+def render_task_queue_dashboard():
+    """Render task queue dashboard in sidebar."""
+    try:
+        from src.queue import get_task_queue
+
+        task_queue = get_task_queue()
+
+        if not task_queue.is_available():
+            return
+
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("📦 Task Queue")
+
+        with st.sidebar.expander("📊 Queue Status", expanded=False):
+            stats = task_queue.get_queue_stats()
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric("Pending", stats.pending_tasks)
+                st.metric("Running", stats.running_tasks)
+
+            with col2:
+                st.metric("Completed", stats.completed_tasks)
+                st.metric("Failed", stats.failed_tasks)
+
+            st.metric("Active Workers", stats.active_workers)
+
+            if stats.total_tasks > 0:
+                st.metric(
+                    "Success Rate",
+                    f"{stats.success_rate * 100:.1f}%"
+                )
+
+    except ImportError:
+        pass  # Queue not available
+    except Exception as e:
+        st.sidebar.error(f"Queue error: {e}")
+
+
+def render_task_monitor(agent_executor):
+    """
+    Render task monitoring interface.
+
+    Args:
+        agent_executor: AgentExecutorV3 instance
+    """
+    st.subheader("📦 Task Queue Monitor")
+
+    try:
+        from src.queue import get_task_queue, TaskStatus
+
+        task_queue = get_task_queue()
+
+        if not task_queue.is_available():
+            st.info("Task queue is disabled. Set USE_REDIS_QUEUE=true in .env to enable.")
+            return
+
+        # Queue statistics
+        st.markdown("### 📊 Queue Statistics")
+
+        stats = task_queue.get_queue_stats()
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("⏳ Pending", stats.pending_tasks)
+        with col2:
+            st.metric("▶️ Running", stats.running_tasks)
+        with col3:
+            st.metric("✅ Completed", stats.completed_tasks)
+        with col4:
+            st.metric("❌ Failed", stats.failed_tasks)
+
+        col5, col6 = st.columns(2)
+
+        with col5:
+            st.metric("👷 Active Workers", stats.active_workers)
+        with col6:
+            if stats.total_tasks > 0:
+                st.metric("📈 Success Rate", f"{stats.success_rate * 100:.1f}%")
+
+        # Task list
+        st.markdown("---")
+        st.markdown("### 📋 Task List")
+
+        status_filter = st.selectbox(
+            "Filter by Status",
+            options=["all", "pending", "running", "completed", "failed"],
+            format_func=lambda x: x.replace('_', ' ').title()
+        )
+
+        # Get tasks
+        if status_filter == "all":
+            tasks = task_queue.list_tasks(limit=50)
+        else:
+            status_enum = TaskStatus(status_filter)
+            tasks = task_queue.list_tasks(status=status_enum, limit=50)
+
+        if tasks:
+            import pandas as pd
+
+            df = pd.DataFrame([
+                {
+                    'Task ID': t.task_id[:8] + '...',
+                    'Type': t.task_type.value.replace('_', ' ').title(),
+                    'Status': t.status.value.title(),
+                    'Priority': t.priority.name,
+                    'Created': t.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    'Worker': t.worker_id[:8] + '...' if t.worker_id else '-'
+                }
+                for t in tasks
+            ])
+
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No tasks found")
+
+    except ImportError:
+        st.error("Task queue module not available")
+    except Exception as e:
+        st.error(f"Error: {e}")

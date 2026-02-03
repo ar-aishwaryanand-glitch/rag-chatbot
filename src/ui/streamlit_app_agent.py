@@ -2,11 +2,14 @@
 
 This version uses AgentExecutorV3 with memory and self-reflection capabilities,
 providing a more intelligent and context-aware chat experience.
+
+NOW WITH MODERN UI! 🎨
 """
 
 import streamlit as st
 from typing import Dict, Any
 import json
+from datetime import datetime
 
 # Import UI modules
 from .state_manager import (
@@ -20,6 +23,16 @@ from .components import (
     render_sidebar,
     show_error,
     show_info
+)
+
+# Import modern UI components
+from .styles import get_modern_css, get_custom_header_html
+from .enhanced_components import (
+    render_enhanced_chat_message,
+    render_typing_indicator,
+    render_stats_dashboard,
+    render_enhanced_sidebar_header,
+    render_quick_actions
 )
 
 # Import Config
@@ -41,18 +54,21 @@ from src.agent.tools import (
 
 
 def configure_page():
-    """Configure Streamlit page settings."""
+    """Configure Streamlit page settings with modern styling."""
     st.set_page_config(
-        page_title="RAG Agent Assistant (Phase 3)",
+        page_title="RAG Agent Assistant - Modern UI",
         page_icon="🤖",
         layout="wide",
         initial_sidebar_state="expanded",
         menu_items={
             'Get Help': None,
             'Report a bug': None,
-            'About': "RAG Agent Assistant with Memory & Self-Reflection - Phase 3"
+            'About': "RAG Agent Assistant with Memory & Self-Reflection - Phase 3 + Modern UI"
         }
     )
+
+    # Apply modern CSS styling
+    st.markdown(get_modern_css(), unsafe_allow_html=True)
 
 
 def initialize_agent_session_state():
@@ -153,8 +169,10 @@ def get_or_create_agent():
 
 
 def render_agent_sidebar():
-    """Render enhanced sidebar with agent controls."""
-    st.sidebar.title("🤖 Agent Controls")
+    """Render enhanced sidebar with agent controls and modern styling."""
+    # Modern sidebar header
+    with st.sidebar:
+        render_enhanced_sidebar_header()
 
     # Agent Features Toggle
     st.sidebar.subheader("🧠 Phase 3 Features")
@@ -278,20 +296,17 @@ def render_agent_sidebar():
 
     st.sidebar.markdown("---")
 
-    # Clear Chat
-    if st.sidebar.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.session_queries = 0
-        st.rerun()
+    # Quick Actions with modern styling
+    with st.sidebar:
+        render_quick_actions()
 
-    # Reset System
-    if st.sidebar.button("🔄 Reset System", use_container_width=True):
-        st.session_state.agent = None
-        st.session_state.agent_initialized = False
-        st.session_state.messages = []
-        st.session_state.session_queries = 0
-        st.cache_resource.clear()
-        st.rerun()
+    st.sidebar.markdown("---")
+
+    # Performance Dashboard
+    if st.session_state.agent_initialized:
+        with st.sidebar:
+            st.sidebar.markdown("---")
+            render_stats_dashboard()
 
 
 def render_agent_details(result: Dict[str, Any]):
@@ -418,16 +433,18 @@ def render_reflection_insights():
 
 
 def render_chat_message_agent(message: Dict):
-    """Render a chat message with agent-specific enhancements."""
-    role = message['role']
-    content = message['content']
+    """Render a chat message with agent-specific enhancements and modern styling."""
+    # Add timestamp if not present
+    if 'timestamp' not in message:
+        message['timestamp'] = datetime.now()
 
-    with st.chat_message(role):
-        st.markdown(content)
+    # Use enhanced rendering
+    render_enhanced_chat_message(message, show_timestamp=True)
 
-        # Show agent details for assistant messages
-        if role == 'assistant' and message.get('agent_result'):
-            render_agent_details(message['agent_result'])
+    # Additional details for assistant messages
+    role = message.get('role', 'assistant')
+    if role == 'assistant':
+        if message.get('agent_result'):
             render_memory_context()
             render_reflection_insights()
 
@@ -442,10 +459,11 @@ def handle_agent_query(prompt: str):
     if not prompt or not prompt.strip():
         return
 
-    # Add user message
+    # Add user message with timestamp
     st.session_state.messages.append({
         'role': 'user',
-        'content': prompt
+        'content': prompt,
+        'timestamp': datetime.now()
     })
 
     # Get agent
@@ -465,11 +483,12 @@ def handle_agent_query(prompt: str):
         # Extract answer
         answer = result.get('final_answer', 'No answer generated')
 
-        # Add assistant message with full result
+        # Add assistant message with full result and timestamp
         st.session_state.messages.append({
             'role': 'assistant',
             'content': answer,
-            'agent_result': result
+            'agent_result': result,
+            'timestamp': datetime.now()
         })
 
     except Exception as e:
@@ -479,7 +498,8 @@ def handle_agent_query(prompt: str):
         st.session_state.messages.append({
             'role': 'assistant',
             'content': f"Sorry, I encountered an error: {error_msg}",
-            'agent_result': None
+            'agent_result': None,
+            'timestamp': datetime.now()
         })
 
         import traceback
@@ -488,45 +508,72 @@ def handle_agent_query(prompt: str):
 
 
 def render_welcome_message_agent():
-    """Render welcome message for agent interface."""
+    """Render welcome message for agent interface with modern styling."""
+    # Modern header
+    st.markdown(
+        get_custom_header_html(
+            "RAG Agent Assistant",
+            "Powered by Memory, Self-Reflection & Multi-Tool Intelligence"
+        ),
+        unsafe_allow_html=True
+    )
+
+    # Welcome content with modern cards
     st.markdown("""
-    ## 👋 Welcome to the RAG Agent Assistant (Phase 3)!
+    <div style="background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(10px);
+         border: 1px solid #334155; border-radius: 16px; padding: 2rem; margin: 1rem 0;">
+        <h3 style="color: #f1f5f9; margin-top: 0;">👋 Welcome!</h3>
+        <p style="color: #cbd5e1; line-height: 1.6;">
+            I'm an <strong>intelligent agent</strong> powered by cutting-edge AI capabilities.
+            I can help you with research, calculations, code generation, and much more!
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    I'm an **intelligent agent** powered by:
-    - 🧠 **Memory**: I remember our conversations and learn from them
-    - 🔍 **Self-Reflection**: I evaluate my actions and improve over time
-    - 🛠️ **Multi-Tool Capabilities**: I can search documents, browse web pages, calculate, execute code, and more
-    - 🌐 **Web Agent**: I can autonomously visit websites and extract structured information
+    # Feature cards
+    col1, col2 = st.columns(2)
 
-    ### 🚀 What Makes Me Special (Phase 3)?
+    with col1:
+        st.markdown("""
+        <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid #6366f1;
+             border-radius: 12px; padding: 1.5rem; height: 100%;">
+            <h4 style="color: #818cf8; margin-top: 0;">🧠 Intelligent Features</h4>
+            <ul style="color: #cbd5e1; line-height: 1.8;">
+                <li><strong>Memory</strong>: I remember our conversations</li>
+                <li><strong>Self-Reflection</strong>: I learn from mistakes</li>
+                <li><strong>Multi-Tool</strong>: Access to 7+ specialized tools</li>
+                <li><strong>Web Agent</strong>: Autonomous web browsing</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
-    1. **Conversation Memory** - I remember what we discussed earlier in our session
-    2. **Episodic Memory** - I learn patterns from past sessions
-    3. **Self-Reflection** - I evaluate my tool choices and answer quality
-    4. **Continuous Learning** - I track what works and improve my decisions
+    with col2:
+        st.markdown("""
+        <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid #8b5cf6;
+             border-radius: 12px; padding: 1.5rem; height: 100%;">
+            <h4 style="color: #a78bfa; margin-top: 0;">💬 Try Asking Me</h4>
+            <ul style="color: #cbd5e1; line-height: 1.8;">
+                <li>"What is RAG and how does it work?"</li>
+                <li>"Calculate 15% of 3,450"</li>
+                <li>"Write Python code to sort a list"</li>
+                <li>"What documents are indexed?"</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
-    ### 💬 Try Asking Me:
-    - "What is RAG and how does it work?"
-    - "Visit https://openai.com/research and extract the main content"
-    - "Calculate the compound interest on $10,000 at 5% for 3 years"
-    - "Write Python code to sort a list"
-    - "Extract and summarize information from https://techcrunch.com"
-    - "What documents are indexed?"
-
-    ### ⚙️ Customize My Behavior:
-    - Toggle **Memory** and **Self-Reflection** in the sidebar
-    - Enable **Agent Reasoning** to see my decision-making process
-    - View **Reflection Insights** to see what I've learned
-
-    ---
-    **Ask me anything!** I'll intelligently route your query to the best tool and learn from each interaction.
-    """)
+    # Quick tip
+    st.markdown("""
+    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;
+         border-radius: 12px; padding: 1rem; margin: 1rem 0;">
+        <p style="color: #34d399; margin: 0;">
+            💡 <strong>Pro Tip:</strong> Enable "Show Agent Reasoning" in the sidebar to see how I make decisions!
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def render_main_chat_agent():
-    """Render the main chat interface with agent capabilities."""
-    st.title("💬 Chat with AI Agent (Phase 3)")
-
+    """Render the main chat interface with agent capabilities and modern UI."""
     # Initialize agent
     if not st.session_state.agent_initialized:
         agent = get_or_create_agent()
@@ -543,6 +590,16 @@ def render_main_chat_agent():
     if not st.session_state.messages:
         render_welcome_message_agent()
     else:
+        # Show custom header for chat mode
+        st.markdown(
+            get_custom_header_html(
+                "RAG Agent Assistant",
+                "Intelligent Conversation in Progress"
+            ),
+            unsafe_allow_html=True
+        )
+
+        # Render chat history
         for message in st.session_state.messages:
             render_chat_message_agent(message)
 

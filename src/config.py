@@ -41,6 +41,18 @@ class Config:
     # Vector Store Configuration
     VECTOR_STORE_PATH = Path(__file__).parent.parent / "data" / "vector_store"
 
+    # Vector Store Backend Selection
+    USE_PINECONE = os.getenv("USE_PINECONE", "false").lower() == "true"
+
+    # Pinecone Configuration (Optional - for production vector database)
+    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+    PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT", "us-east-1")  # Deprecated, use cloud/region
+    PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "rag-agent")
+    PINECONE_NAMESPACE = os.getenv("PINECONE_NAMESPACE", "")  # Empty string = default namespace
+    PINECONE_METRIC = os.getenv("PINECONE_METRIC", "cosine")  # cosine, euclidean, dotproduct
+    PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")  # aws, gcp, azure
+    PINECONE_REGION = os.getenv("PINECONE_REGION", "us-east-1")  # Region for serverless
+
     # LLM Configuration
     LLM_MODEL = GROQ_MODEL if LLM_PROVIDER == "groq" else GEMINI_MODEL
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
@@ -80,6 +92,32 @@ class Config:
 
     # Streaming
     ENABLE_STREAMING = os.getenv("ENABLE_STREAMING", "true").lower() == "true"
+
+    # ===== OBSERVABILITY CONFIGURATION =====
+
+    # OpenTelemetry Settings
+    ENABLE_OBSERVABILITY = os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"
+    OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "rag-agent")
+    OTEL_ENVIRONMENT = os.getenv("OTEL_ENVIRONMENT", "development")  # development, staging, production
+
+    # Exporter Configuration
+    OTEL_EXPORTER_TYPE = os.getenv("OTEL_EXPORTER_TYPE", "console")  # console, otlp, jaeger
+    OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://localhost:4317")  # OTLP gRPC endpoint
+    OTEL_EXPORTER_HEADERS = os.getenv("OTEL_EXPORTER_HEADERS", "")  # Optional headers (e.g., API keys)
+
+    # Jaeger Configuration (if using Jaeger exporter)
+    JAEGER_HOST = os.getenv("JAEGER_HOST", "localhost")
+    JAEGER_PORT = int(os.getenv("JAEGER_PORT", "6831"))
+
+    # Tracing Configuration
+    TRACE_RAG_OPERATIONS = os.getenv("TRACE_RAG_OPERATIONS", "true").lower() == "true"
+    TRACE_AGENT_OPERATIONS = os.getenv("TRACE_AGENT_OPERATIONS", "true").lower() == "true"
+    TRACE_TOOL_CALLS = os.getenv("TRACE_TOOL_CALLS", "true").lower() == "true"
+    TRACE_LLM_CALLS = os.getenv("TRACE_LLM_CALLS", "true").lower() == "true"
+
+    # Metrics Configuration
+    COLLECT_METRICS = os.getenv("COLLECT_METRICS", "true").lower() == "true"
+    METRIC_EXPORT_INTERVAL = int(os.getenv("METRIC_EXPORT_INTERVAL", "60"))  # seconds
 
     @classmethod
     def validate(cls):
@@ -123,6 +161,13 @@ class Config:
         elif cls.EMBEDDING_PROVIDER == "google":
             return f"Google ({cls.EMBEDDING_MODEL})"
         return cls.EMBEDDING_PROVIDER
+
+    @classmethod
+    def get_vector_store_display_name(cls):
+        """Get a human-readable name for the current vector store."""
+        if cls.USE_PINECONE:
+            return f"Pinecone ({cls.PINECONE_INDEX_NAME})"
+        return "FAISS (Local)"
 
 # Validate configuration on import
 Config.validate()
