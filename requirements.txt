@@ -25,7 +25,7 @@ faiss-cpu>=1.7.0  # Local vector store, no compilation needed
 
 # Pinecone (Optional - for production cloud vector database)
 pinecone-client>=3.0.0  # Pinecone vector database client
-langchain-pinecone>=0.1.0  # LangChain integration for Pinecone
+langchain-pinecone>=0.0.1  # LangChain integration for Pinecone (use 0.0.1 for Python 3.14)
 
 # UI Framework
 streamlit>=1.30.0  # Web-based UI for RAG system

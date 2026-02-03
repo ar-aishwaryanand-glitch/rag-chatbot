@@ -93,6 +93,29 @@ class Config:
     # Streaming
     ENABLE_STREAMING = os.getenv("ENABLE_STREAMING", "true").lower() == "true"
 
+    # ===== ADVANCED FEATURES =====
+
+    # PostgreSQL Database (Optional - for persistent session storage)
+    USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
+    USE_CHECKPOINTS = os.getenv("USE_CHECKPOINTS", "true").lower() == "true"
+    DATABASE_URL = os.getenv("DATABASE_URL")  # Full connection string
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_DB = os.getenv("POSTGRES_DB", "rag_chatbot")
+
+    # Policy Engine (Optional - for agent behavior control and governance)
+    USE_POLICY_ENGINE = os.getenv("USE_POLICY_ENGINE", "true").lower() == "true"
+
+    # Redis Message Queue (Optional - for distributed agent coordination)
+    USE_REDIS_QUEUE = os.getenv("USE_REDIS_QUEUE", "false").lower() == "true"
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+
     # ===== OBSERVABILITY CONFIGURATION =====
 
     # OpenTelemetry Settings

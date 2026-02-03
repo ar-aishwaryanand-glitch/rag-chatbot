@@ -31,7 +31,10 @@ from opentelemetry.trace import Status, StatusCode
 from opentelemetry.semconv.trace import SpanAttributes
 
 # Import config
-from .config import Config
+try:
+    from .config import Config
+except ImportError:
+    from config import Config
 
 
 class ObservabilityManager:
