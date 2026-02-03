@@ -367,8 +367,7 @@ def render_memory_context():
                 value=memory_context,
                 height=200,
                 disabled=True,
-                label_visibility="collapsed",
-                key="memory_context_display"
+                label_visibility="collapsed"
             )
         else:
             st.info("No conversation history yet")

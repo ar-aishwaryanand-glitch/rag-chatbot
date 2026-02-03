@@ -280,11 +280,17 @@ Respond with ONLY the tool name, nothing else."""
                 }
             ) as span:
                 if tool_name == "calculator":
-                    prompt = f"""Extract ONLY the mathematical expression from this query. Return just the expression, nothing else.
+                    prompt = f"""Convert this query into a Python mathematical expression. Use Python syntax:
+- For square root: sqrt(x)
+- For power: x**y
+- Operators: +, -, *, /, **
+- Functions: sqrt, sin, cos, tan, log, exp, abs
+
+Return ONLY the expression, no explanation.
 
 Query: {query}
 
-Expression (numbers and operators only):"""
+Expression:"""
                     response = self.llm.invoke([HumanMessage(content=prompt)])
                     expression = response.content.strip()
                     result = tool.run(expression=expression)
