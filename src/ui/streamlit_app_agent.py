@@ -49,7 +49,8 @@ from src.agent.tools import (
     CodeExecutorTool,
     FileOpsTool,
     DocumentManagementTool,
-    WebAgentTool
+    WebAgentTool,
+    NewsApiTool
 )
 
 
@@ -130,11 +131,20 @@ def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool 
         # Playwright not available - skip web agent (expected on Streamlit Cloud)
         pass
 
+    # Get LLM for tools that need it (before registering)
+    llm = rag_chain.llm
+
+    # Add News API tool if available (with LLM for relevance filtering)
+    try:
+        news_api = NewsApiTool(llm_client=llm, filter_irrelevant=True)
+        if news_api.available:
+            tools_to_register.append(news_api)
+    except Exception as e:
+        # NewsAPI dependencies not available - skip
+        pass
+
     for tool in tools_to_register:
         tool_registry.register(tool)
-
-    # Initialize agent with Phase 3 features
-    llm = rag_chain.llm
     agent = AgentExecutorV3(
         llm,
         tool_registry,

@@ -155,7 +155,9 @@ class PolicyEngine:
                 blocked_tools=set(data.get('blocked_tools', [])),
                 max_executions_per_session=data.get('max_executions_per_session'),
                 max_executions_per_tool=data.get('max_executions_per_tool', {}),
-                require_approval_for_tools=set(data.get('require_approval_for_tools', []))
+                require_approval_for_tools=set(data.get('require_approval_for_tools', [])),
+                blocked_domains=set(data.get('blocked_domains', [])),
+                applies_to_tools=set(data.get('applies_to_tools', []))
             )
         except Exception as e:
             print(f"⚠️  Failed to create tool policy: {e}")
@@ -307,6 +309,10 @@ class PolicyEngine:
         )
 
         for policy in tool_policies:
+            # Check if policy applies to this tool (if applies_to_tools is specified)
+            if policy.applies_to_tools and context.tool_name not in policy.applies_to_tools:
+                continue  # Skip this policy if it doesn't apply to this tool
+
             # Check if tool is blocked
             if context.tool_name in policy.blocked_tools:
                 violated_rules.append(policy)
@@ -320,6 +326,22 @@ class PolicyEngine:
                 violated_rules.append(policy)
                 if policy.action == PolicyAction.DENY:
                     highest_action = PolicyAction.DENY
+
+            # Check domain blocking for URLs (web_agent)
+            if context.target_url and policy.blocked_domains:
+                from urllib.parse import urlparse
+                parsed_url = urlparse(context.target_url)
+                domain = parsed_url.netloc.lower()
+
+                # Check if domain is in blocked list (exact match or subdomain)
+                for blocked_domain in policy.blocked_domains:
+                    blocked_lower = blocked_domain.lower()
+                    if domain == blocked_lower or domain.endswith('.' + blocked_lower):
+                        violated_rules.append(policy)
+                        if policy.action == PolicyAction.DENY:
+                            highest_action = PolicyAction.DENY
+                            warnings.append(f"Domain '{domain}' is blocked by policy '{policy.name}'")
+                        break
 
             # Check execution limits
             session_key = f"{context.session_id}:total"
@@ -347,7 +369,10 @@ class PolicyEngine:
 
         if not allowed:
             if highest_action == PolicyAction.DENY:
-                message = f"Tool '{context.tool_name}' is blocked by policy"
+                if context.target_url:
+                    message = f"Access to URL '{context.target_url}' is blocked by policy"
+                else:
+                    message = f"Tool '{context.tool_name}' is blocked by policy"
             elif highest_action == PolicyAction.REQUIRE_APPROVAL:
                 message = f"Tool '{context.tool_name}' requires manual approval"
 

@@ -61,6 +61,8 @@ class ToolPolicy(PolicyRule):
     max_executions_per_session: Optional[int] = None
     max_executions_per_tool: Optional[Dict[str, int]] = None
     require_approval_for_tools: Optional[Set[str]] = None
+    blocked_domains: Optional[Set[str]] = None    # Blocked domains for web_agent
+    applies_to_tools: Optional[Set[str]] = None   # Tools this policy applies to
 
     def __post_init__(self):
         """Initialize sets if None."""
@@ -72,6 +74,10 @@ class ToolPolicy(PolicyRule):
             self.require_approval_for_tools = set()
         if self.max_executions_per_tool is None:
             self.max_executions_per_tool = {}
+        if self.blocked_domains is None:
+            self.blocked_domains = set()
+        if self.applies_to_tools is None:
+            self.applies_to_tools = set()
 
 
 @dataclass
@@ -147,6 +153,7 @@ class PolicyEvaluationContext:
     token_count: int = 0
     estimated_cost: float = 0.0
     request_count: int = 0
+    target_url: Optional[str] = None  # URL being accessed (for domain blocking)
     timestamp: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
 

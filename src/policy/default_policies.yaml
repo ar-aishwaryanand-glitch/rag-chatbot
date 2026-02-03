@@ -58,6 +58,19 @@ tool_policies:
     max_executions_per_tool:
       web_agent: 20
 
+  - rule_id: block_known_403_sites
+    name: Block Known 403 Sites
+    description: Skip sites that consistently return 403 Forbidden errors
+    action: deny
+    enabled: true
+    priority: 180
+    blocked_domains:
+      - "artificialintelligence-news.com"
+      - "www.artificialintelligence-news.com"
+      # Add more blocked domains as they are discovered
+    applies_to_tools:
+      - web_agent
+
 # ============================================================================
 # RATE LIMIT POLICIES
 # ============================================================================

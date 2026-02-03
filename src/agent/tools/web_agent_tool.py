@@ -85,17 +85,30 @@ class WebAgentTool(BaseTool):
         "Extract and summarize information from these 3 URLs"
     """
 
-    def __init__(self, timeout: int = 30, max_pages: int = 5):
+    # List of user agents to rotate through for retry logic
+    USER_AGENTS = [
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'
+    ]
+
+    def __init__(self, timeout: int = 30, max_pages: int = 5, max_retries: int = 2, policy_engine=None):
         """
         Initialize Web Agent Tool.
 
         Args:
             timeout: Page load timeout in seconds
             max_pages: Maximum number of pages to visit in one operation
+            max_retries: Maximum number of retries with different user agents
+            policy_engine: Optional PolicyEngine instance for URL filtering
         """
         super().__init__()
         self.timeout = timeout * 1000  # Convert to milliseconds
         self.max_pages = max_pages
+        self.max_retries = max_retries
+        self.policy_engine = policy_engine
 
         # Check dependencies
         if not PLAYWRIGHT_AVAILABLE:
@@ -131,12 +144,13 @@ class WebAgentTool(BaseTool):
         else:
             raise Exception(result.error or "Web agent execution failed")
 
-    def validate_url(self, url: str) -> tuple[bool, Optional[str]]:
+    def validate_url(self, url: str, session_id: str = "default") -> tuple[bool, Optional[str]]:
         """
-        Validate URL for security (prevent SSRF attacks).
+        Validate URL for security (prevent SSRF attacks) and policy compliance.
 
         Args:
             url: URL to validate
+            session_id: Session ID for policy evaluation
 
         Returns:
             Tuple of (is_valid, error_message)
@@ -181,12 +195,26 @@ class WebAgentTool(BaseTool):
                 # Invalid IP address format - but we'll allow it since gethostbyname worked
                 pass
 
+            # Check against policy engine if available
+            if self.policy_engine and self.policy_engine.is_enabled():
+                from ...policy.policy_definitions import PolicyEvaluationContext
+
+                context = PolicyEvaluationContext(
+                    session_id=session_id,
+                    tool_name=self.name,
+                    target_url=url
+                )
+
+                decision = self.policy_engine.evaluate_tool_usage(context)
+                if not decision.allowed:
+                    return False, f"Policy blocked: {decision.message or 'Domain not allowed'}"
+
             return True, None
 
         except Exception as e:
             return False, f"URL validation error: {str(e)}"
 
-    def run_tool(self, url: str = None, urls: List[str] = None, query: str = None) -> ToolResult:
+    def run_tool(self, url: str = None, urls: List[str] = None, query: str = None, session_id: str = "default") -> ToolResult:
         """
         Execute web agent operations.
 
@@ -194,6 +222,7 @@ class WebAgentTool(BaseTool):
             url: Single URL to visit and extract
             urls: Multiple URLs to visit and synthesize
             query: Research query (will search and visit top results)
+            session_id: Session ID for policy evaluation
 
         Returns:
             ToolResult with extracted content and structured summary
@@ -212,7 +241,7 @@ class WebAgentTool(BaseTool):
             # Determine operation mode
             if url:
                 # Validate single URL
-                is_valid, error = self.validate_url(url)
+                is_valid, error = self.validate_url(url, session_id)
                 if not is_valid:
                     return ToolResult(
                         success=False,
@@ -227,18 +256,24 @@ class WebAgentTool(BaseTool):
 
             elif urls:
                 # Validate all URLs
+                validated_urls = []
                 for u in urls:
-                    is_valid, error = self.validate_url(u)
+                    is_valid, error = self.validate_url(u, session_id)
                     if not is_valid:
-                        return ToolResult(
-                            success=False,
-                            output="",
-                            error=f"URL validation failed for {u}: {error}",
-                            duration=time.time() - start_time
-                        )
+                        print(f"⚠️ Skipping {u}: {error}")
+                        continue  # Skip blocked URLs instead of failing entirely
+                    validated_urls.append(u)
+
+                if not validated_urls:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error="All URLs were blocked by policy or validation",
+                        duration=time.time() - start_time
+                    )
 
                 # Multi-URL synthesis
-                result = asyncio.run(self._extract_multiple_urls(urls))
+                result = asyncio.run(self._extract_multiple_urls(validated_urls))
                 return result
 
             elif query:
@@ -359,16 +394,19 @@ class WebAgentTool(BaseTool):
                 duration=time.time() - start_time
             )
 
-    async def _fetch_and_extract(self, url: str) -> WebPage:
+    async def _fetch_and_extract(self, url: str, retry_attempt: int = 0) -> WebPage:
         """
-        Fetch a URL and extract its main content.
+        Fetch a URL and extract its main content with retry logic.
 
         Args:
             url: URL to fetch
+            retry_attempt: Current retry attempt number
 
         Returns:
             WebPage object with extracted content
         """
+        user_agent = self.USER_AGENTS[retry_attempt % len(self.USER_AGENTS)]
+
         try:
             async with async_playwright() as p:
                 # Launch browser with stealth mode
@@ -383,7 +421,7 @@ class WebAgentTool(BaseTool):
 
                 # Create context with realistic browser fingerprint
                 context = await browser.new_context(
-                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    user_agent=user_agent,
                     viewport={'width': 1920, 'height': 1080},
                     locale='en-US',
                     timezone_id='America/New_York',
@@ -412,7 +450,26 @@ class WebAgentTool(BaseTool):
 
                 # Navigate to URL
                 try:
-                    await page.goto(url, timeout=self.timeout, wait_until='domcontentloaded')
+                    response = await page.goto(url, timeout=self.timeout, wait_until='domcontentloaded')
+
+                    # Check for 403 error
+                    if response and response.status == 403:
+                        await browser.close()
+
+                        # Retry with different user agent if attempts remaining
+                        if retry_attempt < self.max_retries:
+                            print(f"⚠️ 403 Forbidden on {url}, retrying with different user agent (attempt {retry_attempt + 1}/{self.max_retries})")
+                            await asyncio.sleep(1)  # Brief delay before retry
+                            return await self._fetch_and_extract(url, retry_attempt + 1)
+                        else:
+                            return WebPage(
+                                url=url,
+                                title="403 - Forbidden",
+                                content="Access to this page is forbidden.",
+                                success=False,
+                                error=f"403 Forbidden: Access denied after {self.max_retries + 1} attempts"
+                            )
+
                 except PlaywrightTimeout:
                     await browser.close()
                     return WebPage(
@@ -438,6 +495,12 @@ class WebAgentTool(BaseTool):
             return extracted
 
         except Exception as e:
+            # Retry on certain exceptions if attempts remaining
+            if retry_attempt < self.max_retries and ("403" in str(e) or "forbidden" in str(e).lower()):
+                print(f"⚠️ Error fetching {url}: {str(e)}, retrying (attempt {retry_attempt + 1}/{self.max_retries})")
+                await asyncio.sleep(1)
+                return await self._fetch_and_extract(url, retry_attempt + 1)
+
             return WebPage(
                 url=url,
                 title="",
