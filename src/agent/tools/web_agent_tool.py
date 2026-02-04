@@ -182,7 +182,7 @@ class WebAgentTool(BaseTool):
 
                 # Check if it's a private/internal IP
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                    return False, f"Access to private/internal IP addresses is not allowed"
+                    return False, "Access to private/internal IP addresses is not allowed"
 
                 # Block AWS metadata endpoint specifically
                 if ip_str == '169.254.169.254':
@@ -608,47 +608,40 @@ class WebAgentTool(BaseTool):
         return metadata
 
     def _format_single_page(self, page: WebPage) -> str:
-        """Format a single page extraction."""
-        output = f"""# {page.title}
-
-**Source:** {page.url}
-**Word Count:** {page.word_count}
-"""
-        if page.author:
-            output += f"**Author:** {page.author}\n"
-        if page.publish_date:
-            output += f"**Published:** {page.publish_date}\n"
-
-        output += f"\n## Content\n\n{page.content}\n"
-
-        return output
+        """Format a single page extraction with clean format."""
+        return f"Answer: {page.content}\n\nSources: {page.title}"
 
     def _format_multiple_pages(self, pages: List[WebPage]) -> str:
-        """Format multiple page extractions with synthesis."""
-        output = f"# Web Research Summary\n\n"
-        output += f"**Sources Analyzed:** {len(pages)}\n"
-        output += f"**Extracted:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+        """Format multiple page extractions with deduplication."""
+        # Combine content from all pages with deduplication
+        content_parts = []
+        source_titles = []
+        seen_content = set()
 
-        output += "## Key Information Across Sources\n\n"
+        for page in pages:
+            # Take content from each page
+            preview = page.content[:800] if len(page.content) > 800 else page.content
 
-        for i, page in enumerate(pages, 1):
-            output += f"### Source {i}: {page.title}\n\n"
-            output += f"**URL:** {page.url}\n"
-            output += f"**Word Count:** {page.word_count}\n"
-            if page.author:
-                output += f"**Author:** {page.author}\n"
-            output += f"\n**Content Preview:**\n\n"
+            # Deduplicate similar content
+            fingerprint = preview[:150].lower().strip()
 
-            # Limit content preview for multiple pages
-            preview = page.content[:800] + "..." if len(page.content) > 800 else page.content
-            output += f"{preview}\n\n"
-            output += "---\n\n"
+            if fingerprint not in seen_content and preview:
+                content_parts.append(preview)
+                source_titles.append(page.title)
+                seen_content.add(fingerprint)
 
-        output += "## Citations\n\n"
-        for i, page in enumerate(pages, 1):
-            output += f"{i}. [{page.title}]({page.url})\n"
+        # Check if we have unique content
+        if not content_parts:
+            return "Answer: Pages extracted but content was repetitive or unavailable.\n\nSources: Web research"
 
-        return output
+        # Combine unique content
+        combined_content = " ".join(content_parts)
+
+        # Deduplicate sources
+        unique_sources = list(dict.fromkeys(source_titles))
+        sources_text = ", ".join(unique_sources)
+
+        return f"Answer: {combined_content}\n\nSources: {sources_text}"
 
     def get_usage_examples(self) -> List[str]:
         """Return example usage patterns."""

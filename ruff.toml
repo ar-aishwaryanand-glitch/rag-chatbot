@@ -1,0 +1,36 @@
+# Ruff configuration for RAG Agent project
+# https://docs.astral.sh/ruff/configuration/
+
+[lint]
+# Rules to enable
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "W",   # pycodestyle warnings
+]
+
+# Rules to ignore
+ignore = [
+    "E402",  # Module level import not at top of file (needed for sys.path manipulation in Streamlit)
+    "E501",  # Line too long (handled by formatter)
+]
+
+# Per-file ignores
+[lint.per-file-ignores]
+# Streamlit app needs imports after sys.path setup
+"src/ui/streamlit_app_agent.py" = ["E402"]
+
+# Test files can have unused variables for setup/mocking
+"tests/**/*.py" = ["F841"]
+
+# Optional dependency imports look unused but check availability
+"src/agent/tools/news_api_tool.py" = ["F401"]
+"src/database/postgres_backend.py" = ["F401"]
+"src/policy/policy_store.py" = ["F401"]
+"src/agent/agent_executor_v3.py" = ["F401"]
+
+# Integration tests intentionally import to check availability
+"tests/integration/test_critical_fixes.py" = ["F401", "E722"]
+
+[lint.flake8-unused-arguments]
+ignore-variadic-names = true

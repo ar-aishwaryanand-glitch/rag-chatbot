@@ -9,10 +9,12 @@ This module provides database operations for:
 """
 
 import os
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from datetime import datetime
 import json
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 try:
     import psycopg2
@@ -43,6 +45,10 @@ class PostgresBackend:
         self.connection_pool = None
         self._initialize_pool()
 
+        # Thread pool for async database writes (non-blocking)
+        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="db-writer")
+        self._lock = threading.Lock()
+
     def _get_connection_string(self) -> str:
         """Get connection string from environment variables."""
         # Try full connection string first
@@ -61,11 +67,12 @@ class PostgresBackend:
         return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
     def _initialize_pool(self):
-        """Initialize connection pool."""
+        """Initialize connection pool with optimized settings."""
         try:
+            # Optimized pool: More connections ready, faster response
             self.connection_pool = pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=10,
+                minconn=3,  # Keep 3 connections warm (was 1)
+                maxconn=20,  # Allow more concurrent operations (was 10)
                 dsn=self.connection_string
             )
         except Exception as e:
@@ -298,8 +305,27 @@ class PostgresBackend:
 
     # Message operations
 
-    def add_message(self, message: Message) -> Optional[int]:
-        """Add a message to a session."""
+    def add_message(self, message: Message, async_write: bool = True) -> Optional[int]:
+        """
+        Add a message to a session.
+
+        Args:
+            message: Message to add
+            async_write: If True, writes asynchronously (non-blocking, faster)
+
+        Returns:
+            Message ID if successful (None for async writes)
+        """
+        if async_write:
+            # Non-blocking write - submit to thread pool and return immediately
+            self._executor.submit(self._add_message_sync, message)
+            return None  # ID not available for async writes
+        else:
+            # Blocking write - wait for completion
+            return self._add_message_sync(message)
+
+    def _add_message_sync(self, message: Message) -> Optional[int]:
+        """Internal synchronous message add (used by both sync and async paths)."""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()

@@ -153,7 +153,7 @@ class ReflectionModule:
         else:
             error = tool_result.get("error", "Unknown error")
             insights.append(f"Tool '{selected_tool}' failed: {error}")
-            suggestions.append(f"Consider trying alternative tools for similar queries")
+            suggestions.append("Consider trying alternative tools for similar queries")
 
         reflection = Reflection(
             type=ReflectionType.TOOL_SELECTION,

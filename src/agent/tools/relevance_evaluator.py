@@ -4,9 +4,8 @@ Relevance Evaluator - Determines if content is relevant to a query.
 Uses LLM to evaluate relevance of articles, web pages, or other content.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from dataclasses import dataclass
-import os
 
 
 @dataclass
@@ -154,7 +153,8 @@ REASON: Article directly discusses the topic mentioned in the query."""
                 elif line.startswith('CONFIDENCE:'):
                     try:
                         confidence = float(line.split(':')[1].strip())
-                    except:
+                    except (ValueError, IndexError, AttributeError):
+                        # Default confidence if parsing fails
                         confidence = 0.5
                 elif line.startswith('REASON:'):
                     reason = line.split(':', 1)[1].strip()

@@ -209,8 +209,6 @@ class MemoryManager:
 
     def _generate_session_summary(self) -> str:
         """Generate a summary of the current session."""
-        stats = self.conversation_memory.get_stats()
-
         # Simple extraction-based summary
         user_queries = [
             msg.content for msg in self.conversation_memory.messages

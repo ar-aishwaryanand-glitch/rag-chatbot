@@ -1,7 +1,7 @@
 """Agent executor with Phase 3 enhancements: Memory + Self-Reflection."""
 
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage
 
@@ -148,6 +148,24 @@ class AgentExecutorV3:
 
         # Add memory context if available
         if self.enable_memory and self.memory_manager:
+            # Restore conversation messages from state if available (checkpoint resume)
+            if state.get('conversation_messages'):
+                try:
+                    # Convert serialized messages back to conversation memory
+                    conversation_dict = {
+                        'session_id': self.memory_manager.session_id,
+                        'session_start': self.memory_manager.conversation_memory.session_start.isoformat(),
+                        'turn_count': len([m for m in state['conversation_messages'] if m['role'] == 'user']),
+                        'messages': state['conversation_messages'],
+                        'summary': None,
+                        'stats': self.memory_manager.conversation_memory.stats
+                    }
+                    from .memory.conversation_memory import ConversationMemory
+                    self.memory_manager.conversation_memory = ConversationMemory.from_dict(conversation_dict)
+                    print(f"✅ Restored {len(state['conversation_messages'])} messages from checkpoint")
+                except Exception as e:
+                    print(f"⚠️  Failed to restore conversation history: {e}")
+
             # Add user message to memory
             self.memory_manager.add_user_message(state['query'])
 
@@ -158,6 +176,17 @@ class AgentExecutorV3:
             )
 
             state['memory_context'] = memory_context
+
+            # Store conversation messages in state for checkpoint persistence
+            state['conversation_messages'] = [
+                {
+                    'role': msg.role,
+                    'content': msg.content,
+                    'timestamp': msg.timestamp.isoformat(),
+                    'metadata': msg.metadata
+                }
+                for msg in self.memory_manager.conversation_memory.messages
+            ]
 
         return state
 
@@ -178,21 +207,29 @@ class AgentExecutorV3:
             prompt_parts.append(f"Context from previous interactions:\n{state['memory_context']}\n")
 
         prompt_parts.append(
-            f"""You are a tool routing assistant. Given a user query, select the most appropriate tool to use.
+            f"""You are a tool routing assistant. Given a user query, select the most appropriate tool to use OR respond with "none" if you can answer from memory.
 
 Available tools:
 {tool_descriptions}
 
 **Tool Selection Guidelines:**
-- web_search: Returns quick links and snippets from search engines. Use for finding URLs.
+- web_search: Returns quick links and snippets from search engines. Use for finding URLs or quick facts from the internet.
 - web_agent: Visits websites, extracts full content, and provides detailed summaries with citations. Use when user wants comprehensive information, detailed content, or research from web sources.
-- document_search: Search through uploaded documents in the database.
+- document_search: Search through uploaded documents in the database. Use for questions about documents, PDFs, or technical content in the knowledge base.
+- calculator: Perform mathematical calculations and evaluations.
+- file_ops: Read, list, or search files in the workspace.
+- none: Use when answering questions about THIS CONVERSATION, previous messages, what was discussed earlier, or anything about the current chat session. Memory context is available for these queries.
 
-**Important:** If the user asks for "latest news", "recent information", or wants detailed web research (not just links), use web_agent to visit sites and extract full content.
+**Important Rules:**
+1. If user asks about "our conversation", "what we discussed", "earlier", "previous messages", or "this chat" → use "none" (answer from memory)
+2. If user wants latest news, recent information, or detailed web research → use "web_agent" to visit sites
+3. If user wants to search uploaded documents or knowledge base → use "document_search"
+4. If user wants quick web facts or URLs → use "web_search"
+5. If user wants calculations → use "calculator"
 
 User query: "{state['query']}"
 
-Respond with ONLY the tool name, nothing else."""
+Respond with ONLY the tool name or "none", nothing else."""
         )
 
         prompt = "\n".join(prompt_parts)
@@ -202,11 +239,16 @@ Respond with ONLY the tool name, nothing else."""
             response = self.llm.invoke([HumanMessage(content=prompt)])
             selected_tool = response.content.strip().lower()
 
+            # Handle "none" - answer from memory without tools
+            if selected_tool == "none":
+                state['selected_tool'] = None
+                state['answer_from_memory'] = True
             # Validate tool exists
-            if selected_tool not in self.tool_registry:
+            elif selected_tool not in self.tool_registry:
                 selected_tool = self.tool_registry.get_tool_names()[0]
-
-            state['selected_tool'] = selected_tool
+                state['selected_tool'] = selected_tool
+            else:
+                state['selected_tool'] = selected_tool
 
         except Exception as e:
             state['last_error'] = f"Tool routing error: {str(e)}"
@@ -278,7 +320,7 @@ Respond with ONLY the tool name, nothing else."""
                     "query": query[:100],
                     "iteration": state['iteration']
                 }
-            ) as span:
+            ) as _:  # span intentionally unused
                 if tool_name == "calculator":
                     prompt = f"""Convert this query into a Python mathematical expression. Use Python syntax:
 - For square root: sqrt(x)
@@ -286,13 +328,40 @@ Respond with ONLY the tool name, nothing else."""
 - Operators: +, -, *, /, **
 - Functions: sqrt, sin, cos, tan, log, exp, abs
 
-Return ONLY the expression, no explanation.
+CRITICAL: Return ONLY the mathematical expression. No explanations, no text, no context.
+If you cannot create an expression, return "ERROR: cannot calculate"
 
 Query: {query}
 
 Expression:"""
                     response = self.llm.invoke([HumanMessage(content=prompt)])
-                    expression = response.content.strip()
+                    raw_response = response.content.strip()
+
+                    # Extract only the mathematical expression
+                    # Remove common prefixes and explanatory text
+                    expression = raw_response
+
+                    # Remove "Expression" prefix if present
+                    if expression.lower().startswith("expression"):
+                        expression = expression.split(":", 1)[-1].strip()
+
+                    # Extract the last line if multi-line (often the expression is on the last line)
+                    if "\n" in expression:
+                        lines = [line.strip() for line in expression.split("\n") if line.strip()]
+                        # Find the line that looks most like a math expression (contains operators)
+                        math_line = None
+                        for line in reversed(lines):
+                            if any(op in line for op in ['+', '-', '*', '/', '(', ')', '**', 'sqrt', 'sin', 'cos']):
+                                math_line = line
+                                break
+                        if math_line:
+                            expression = math_line
+                        else:
+                            expression = lines[-1] if lines else expression
+
+                    # Remove markdown code blocks if present
+                    expression = expression.replace("```python", "").replace("```", "").strip()
+
                     result = tool.run(expression=expression)
 
                 elif tool_name == "python_executor":
@@ -454,10 +523,56 @@ Response:"""
         return state
 
     def _synthesize_answer(self, state: AgentState) -> AgentState:
-        """Synthesize final answer from tool results."""
+        """Synthesize final answer from tool results or memory."""
         state['current_phase'] = 'synthesizing'
 
         tool_results = state.get('tool_results', [])
+
+        # Handle queries answered from memory without tools
+        if not tool_results and state.get('answer_from_memory'):
+            memory_context = state.get('memory_context', '')
+            query = state['query']
+
+            if memory_context:
+                # Use LLM to generate answer from memory context
+                synthesis_prompt = f"""Based on the conversation history below, answer the user's question naturally.
+
+Conversation History:
+{memory_context}
+
+User Question: {query}
+
+Provide a natural, conversational response based on the conversation history. If the history doesn't contain relevant information, say so."""
+
+                try:
+                    from langchain_core.messages import HumanMessage
+                    response = self.llm.invoke([HumanMessage(content=synthesis_prompt)])
+                    state['final_answer'] = response.content.strip()
+                except Exception as e:
+                    state['final_answer'] = f"I have conversation history but encountered an error: {str(e)}"
+            else:
+                state['final_answer'] = "I don't have enough conversation history to answer that question yet. We just started chatting!"
+
+            # Add to memory
+            if self.enable_memory and self.memory_manager:
+                self.memory_manager.add_assistant_message(
+                    content=state['final_answer'],
+                    tools_used=[]
+                )
+
+                # Update conversation messages in state
+                state['conversation_messages'] = [
+                    {
+                        'role': msg.role,
+                        'content': msg.content,
+                        'timestamp': msg.timestamp.isoformat(),
+                        'metadata': msg.metadata
+                    }
+                    for msg in self.memory_manager.conversation_memory.messages
+                ]
+
+            state['current_phase'] = 'done'
+            return state
 
         if not tool_results:
             state['final_answer'] = "I couldn't process your query. Please try again."
@@ -468,8 +583,9 @@ Response:"""
         if last_result['success']:
             output = last_result['output']
             if "Answer:" in output:
-                answer_part = output.split("Sources:")[0].replace("Answer:", "").strip()
-                state['final_answer'] = answer_part
+                # Remove "Answer:" label but keep everything else including sources
+                final_output = output.replace("Answer:", "").strip()
+                state['final_answer'] = final_output
             else:
                 state['final_answer'] = output
         else:
@@ -483,6 +599,17 @@ Response:"""
                 content=state['final_answer'],
                 tools_used=tools_used
             )
+
+            # Update conversation messages in state for checkpoint persistence
+            state['conversation_messages'] = [
+                {
+                    'role': msg.role,
+                    'content': msg.content,
+                    'timestamp': msg.timestamp.isoformat(),
+                    'metadata': msg.metadata
+                }
+                for msg in self.memory_manager.conversation_memory.messages
+            ]
 
         state['current_phase'] = 'done'
         return state
@@ -562,6 +689,7 @@ Response:"""
             'needs_retry': False,
             'last_error': None,
             'memory_context': None,
+            'conversation_messages': None,  # Will be populated from checkpoint or created fresh
             'start_time': time.time(),
             'execution_metadata': {'session_id': session_id or thread_id or 'default'}
         }
@@ -650,7 +778,8 @@ Response:"""
             performance = self.learning_module.get_overall_performance()
 
             if self.reflection_module:
-                session_reflection = self.reflection_module.reflect_on_session(
+                # Call reflect_on_session for side effects (updates internal state)
+                self.reflection_module.reflect_on_session(
                     total_queries=session_stats.get('turn_count', 0) if self.enable_memory else 0,
                     tools_used=tools_used,
                     success_rate=performance.get('success_rate', 0.0),
@@ -763,7 +892,7 @@ Response:"""
             Task ID for tracking
         """
         try:
-            from src.queue import get_task_queue, AgentTask, TaskPriority, TaskType
+            from src.task_queue import get_task_queue, AgentTask, TaskPriority, TaskType
 
             task_queue = get_task_queue()
 
@@ -817,7 +946,7 @@ Response:"""
             Task status dictionary or None
         """
         try:
-            from src.queue import get_task_queue
+            from src.task_queue import get_task_queue
 
             task_queue = get_task_queue()
 
@@ -854,7 +983,7 @@ Response:"""
             Task result dictionary or None
         """
         try:
-            from src.queue import get_task_queue
+            from src.task_queue import get_task_queue
 
             task_queue = get_task_queue()
 
@@ -887,7 +1016,7 @@ Response:"""
             task_id: Task ID to cancel
         """
         try:
-            from src.queue import get_task_queue
+            from src.task_queue import get_task_queue
 
             task_queue = get_task_queue()
 

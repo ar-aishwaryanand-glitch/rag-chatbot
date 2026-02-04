@@ -2,7 +2,6 @@
 
 from pathlib import Path
 from typing import List, Dict
-import os
 
 def load_docx_file(file_path: Path) -> str:
     """

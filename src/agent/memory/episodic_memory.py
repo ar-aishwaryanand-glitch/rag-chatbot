@@ -5,7 +5,6 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
-import pickle
 
 
 @dataclass

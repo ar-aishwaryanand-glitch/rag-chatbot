@@ -5,7 +5,6 @@ This module provides initialization functions that were previously in src/main.p
 
 from src.document_manager import get_document_manager
 from src.rag_chain import RAGChain
-from typing import Optional
 
 
 def initialize_system(rebuild_index: bool = False, use_documents: bool = True) -> RAGChain:

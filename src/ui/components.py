@@ -5,7 +5,7 @@ in the Streamlit interface.
 """
 
 import streamlit as st
-from typing import Dict, List, Optional
+from typing import Dict
 from .state_manager import trigger_rebuild, clear_chat_history, update_config, get_config
 from .document_handler import (
     handle_file_upload,
@@ -17,7 +17,6 @@ from .document_handler import (
 from .url_handler import handle_url_submission
 
 # Import Config for defaults
-from src.config import Config
 
 
 def render_chat_message(message: Dict):
@@ -54,7 +53,7 @@ def render_source_card(source: Dict, index: int):
 
     # Content preview in a text area (scrollable)
     st.text_area(
-        f"Content Preview",
+        "Content Preview",
         value=source['content'],
         height=100,
         disabled=True,
@@ -713,7 +712,7 @@ def render_policy_violations_table(agent_executor, session_id: str = None):
 def render_task_queue_dashboard():
     """Render task queue dashboard in sidebar."""
     try:
-        from src.queue import get_task_queue
+        from src.task_queue import get_task_queue
 
         task_queue = get_task_queue()
 
@@ -760,7 +759,7 @@ def render_task_monitor(agent_executor):
     st.subheader("📦 Task Queue Monitor")
 
     try:
-        from src.queue import get_task_queue, TaskStatus
+        from src.task_queue import get_task_queue, TaskStatus
 
         task_queue = get_task_queue()
 

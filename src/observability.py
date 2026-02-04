@@ -8,7 +8,6 @@ Provides:
 - Custom instrumentation decorators
 """
 
-import os
 import time
 from typing import Optional, Dict, Any, Callable
 from functools import wraps
@@ -28,7 +27,6 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
 from opentelemetry.trace import Status, StatusCode
-from opentelemetry.semconv.trace import SpanAttributes
 
 # Import config
 try:

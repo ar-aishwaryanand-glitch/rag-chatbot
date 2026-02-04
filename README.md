@@ -2,9 +2,11 @@
 
 A powerful Retrieval-Augmented Generation (RAG) chatbot powered by Groq API, HuggingFace embeddings, and Streamlit UI.
 
+[![Tests](https://github.com/ar-aishwaryanand-glitch/rag-chatbot/actions/workflows/tests.yml/badge.svg)](https://github.com/ar-aishwaryanand-glitch/rag-chatbot/actions/workflows/tests.yml)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)](https://streamlit.io)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Groq](https://img.shields.io/badge/Groq-API-orange?style=for-the-badge)](https://groq.com)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ## Features
 
@@ -561,6 +563,36 @@ Your app will be live at: `https://<your-app-name>.streamlit.app`
 
 ## Testing
 
+### Run All Tests
+
+```bash
+# Run all unit tests
+pytest tests/unit -v
+
+# Run with coverage report
+pytest tests/unit --cov=src --cov-report=term-missing
+
+# Run integration tests (may require API keys)
+pytest tests/integration -v
+```
+
+### Test Structure
+
+```
+tests/
+├── conftest.py              # Shared test fixtures
+├── unit/                    # Fast, isolated tests
+│   ├── test_config.py       # Configuration tests
+│   ├── test_memory.py       # Memory system tests
+│   ├── test_tools.py        # Tool registry tests
+│   ├── test_embeddings.py   # Embedding tests
+│   ├── test_vector_store.py # Vector store tests
+│   └── test_rag_chain_unit.py # RAG chain tests
+└── integration/             # End-to-end tests
+    ├── test_agent_system.py
+    └── test_rag_chain.py
+```
+
 ### Test Web Agent
 
 Verify the web agent is working correctly:
@@ -576,6 +608,44 @@ This will test:
 - Dependency availability
 
 Expected output: All tests pass (100%)
+
+## Development
+
+### Code Quality
+
+This project uses Ruff for linting and code formatting:
+
+```bash
+# Check for issues
+ruff check src/ tests/
+
+# Auto-fix issues
+ruff check src/ tests/ --fix
+
+# Format code
+ruff format src/ tests/
+```
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+pip install pytest pytest-cov ruff
+
+# Run tests
+pytest tests/unit -v
+
+# Run with coverage
+pytest tests/unit --cov=src --cov-report=html
+```
+
+### CI/CD
+
+The project includes GitHub Actions workflows for:
+- Unit tests on Python 3.11 & 3.12
+- Linting with Ruff
+- Type checking with mypy
+- Coverage reporting to Codecov
 
 ## Requirements
 

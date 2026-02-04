@@ -9,10 +9,9 @@ Integrates with:
 import os
 import time
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
-import json
 
 from .base_tool import BaseTool, ToolResult
 from .relevance_evaluator import RelevanceEvaluator
@@ -386,12 +385,13 @@ class NewsApiTool(BaseTool):
         try:
             # Try ISO format first
             return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-        except:
+        except (ValueError, AttributeError):
             try:
                 # Try parsing common formats
                 from dateutil import parser
                 return parser.parse(date_str)
-            except:
+            except (ValueError, TypeError, ImportError):
+                # Cannot parse date - return None
                 return None
 
     def _format_articles(
@@ -400,38 +400,21 @@ class NewsApiTool(BaseTool):
         query: Optional[str],
         category: Optional[str]
     ) -> str:
-        """Format articles as markdown."""
-        output = f"# News Articles\n\n"
+        """Format articles as clean paragraphs with sources."""
+        # Combine article descriptions
+        content_parts = []
+        source_titles = []
 
-        if query:
-            output += f"**Search Query:** {query}\n"
-        if category:
-            output += f"**Category:** {category}\n"
-
-        output += f"**Source:** {self.service}\n"
-        output += f"**Articles Found:** {len(articles)}\n"
-        output += f"**Retrieved:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-
-        output += "---\n\n"
-
-        for i, article in enumerate(articles, 1):
-            output += f"## {i}. {article.title}\n\n"
-            output += f"**Source:** {article.source}\n"
-
-            if article.author:
-                output += f"**Author:** {article.author}\n"
-
-            if article.published_at:
-                output += f"**Published:** {article.published_at.strftime('%Y-%m-%d %H:%M')}\n"
-
-            output += f"**URL:** {article.url}\n\n"
-
+        for article in articles:
             if article.description:
-                output += f"{article.description}\n\n"
+                content_parts.append(article.description)
+            source_titles.append(f"{article.title} ({article.source})")
 
-            output += "---\n\n"
+        # Combine content and sources
+        combined_content = " ".join(content_parts)
+        sources_text = ", ".join(source_titles)
 
-        return output
+        return f"Answer: {combined_content}\n\nSources: {sources_text}"
 
     def get_usage_examples(self) -> List[str]:
         """Return example usage patterns."""

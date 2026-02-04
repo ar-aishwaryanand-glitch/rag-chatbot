@@ -1,7 +1,6 @@
 """File operations tool with workspace restrictions."""
 
 from pathlib import Path
-from typing import List, Optional
 from .base_tool import BaseTool
 
 
@@ -189,11 +188,11 @@ Use for exploring files, reading documents, or finding specific files."""
 
             return "\n".join(lines)
 
-        except ValueError as e:
+        except ValueError:
             # Invalid glob pattern
             return f"Search error: Invalid pattern '{pattern_str}'"
-        except PermissionError as e:
-            return f"Search error: Permission denied while searching"
+        except PermissionError:
+            return "Search error: Permission denied while searching"
         except Exception as e:
             return f"Search error: {str(e)}"
 

@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 import time
 
 from .config import Config
-from .observability import get_observability, instrumented
+from .observability import get_observability
 
 if TYPE_CHECKING:
     from .vector_store import VectorStoreManager
@@ -35,8 +35,10 @@ class RAGChain:
 Instructions:
 - Use ONLY the information from the context below to answer the question
 - If the context doesn't contain relevant information, say "I don't have enough information to answer this question based on the provided context."
-- Be concise and clear in your answers
-- If you use information from the context, mention which source it came from
+- Write your answer in clear, flowing paragraphs (not bullet points or lists)
+- Provide a comprehensive answer with proper paragraph structure
+- After your main answer, add a "Sources:" section at the very end listing all documents you referenced
+- Format sources as: "Sources: [Document Name 1], [Document Name 2]"
 - Do not make up information or use external knowledge
 
 Context:

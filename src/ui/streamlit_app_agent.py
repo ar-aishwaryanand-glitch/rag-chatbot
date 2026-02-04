@@ -6,33 +6,39 @@ providing a more intelligent and context-aware chat experience.
 NOW WITH MODERN UI! 🎨
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import streamlit as st
 from typing import Dict, Any
-import json
 from datetime import datetime
+import atexit
 
 # Import UI modules
-from .state_manager import (
+from src.ui.state_manager import (
     initialize_session_state,
-    is_initialized,
     get_error_message,
-    clear_error,
-    config_override
+    clear_error
 )
-from .components import (
-    render_sidebar,
-    show_error,
-    show_info
+from src.ui.components import (
+    show_error
 )
 
 # Import modern UI components
-from .styles import get_modern_css, get_custom_header_html
-from .enhanced_components import (
+from src.ui.styles import get_modern_css, get_custom_header_html
+from src.ui.enhanced_components import (
     render_enhanced_chat_message,
     render_typing_indicator,
     render_stats_dashboard,
     render_enhanced_sidebar_header,
-    render_quick_actions
+    render_quick_actions,
+    render_suggested_prompts,
+    render_welcome_cards,
+    render_stats_cards
 )
 
 # Import Config
@@ -87,14 +93,26 @@ def initialize_agent_session_state():
         'show_memory_context': False,
         'show_reflection_insights': False,
         'session_queries': 0,
+        'conversation_thread_id': None,  # NEW: Track conversation thread for memory
     }
 
     for key, value in agent_defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
+    # Generate a unique conversation thread ID if not exists
+    if st.session_state.conversation_thread_id is None:
+        import uuid
+        st.session_state.conversation_thread_id = f"streamlit_{uuid.uuid4().hex[:12]}"
+
 
 @st.cache_resource
+@st.cache_resource(show_spinner=False)
+def _get_rag_chain():
+    """Cached RAG chain initialization."""
+    return initialize_system(rebuild_index=False, use_documents=True)
+
+
 def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool = True):
     """
     Initialize the agent system with all tools.
@@ -106,41 +124,45 @@ def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool 
     Returns:
         AgentExecutorV3 instance
     """
-    # Initialize RAG system
-    rag_chain = initialize_system(rebuild_index=False, use_documents=True)
+    # Get cached RAG system (loads faster on subsequent calls)
+    rag_chain = _get_rag_chain()
     vector_store_manager = rag_chain.vector_store_manager
 
-    # Register tools
+    # Register tools (lightweight, fast operations)
     tool_registry = ToolRegistry()
 
+    # Core tools (always available, fast to initialize)
     tools_to_register = [
         RAGTool(rag_chain),
         WebSearchTool(max_results=3),
         CalculatorTool(),
-        CodeExecutorTool(timeout=10),
         FileOpsTool(Config.FILE_OPS_WORKSPACE),
         DocumentManagementTool(vector_store_manager)
     ]
 
-    # Add Web Agent only if Playwright is available (not on Streamlit Cloud)
+    # Code executor (optional, fast)
+    if Config.CODE_EXECUTOR_ENABLED:
+        tools_to_register.append(CodeExecutorTool(timeout=10))
+
+    # Web Agent (slow - only add if Playwright available)
     try:
         web_agent = WebAgentTool(timeout=30, max_pages=5)
         if web_agent.available:
             tools_to_register.append(web_agent)
-    except Exception as e:
-        # Playwright not available - skip web agent (expected on Streamlit Cloud)
+    except Exception:
+        # Playwright not available - skip (expected on Streamlit Cloud)
         pass
 
-    # Get LLM for tools that need it (before registering)
+    # Get LLM for tools that need it
     llm = rag_chain.llm
 
-    # Add News API tool if available (with LLM for relevance filtering)
+    # News API tool (optional, needs API key)
     try:
         news_api = NewsApiTool(llm_client=llm, filter_irrelevant=True)
         if news_api.available:
             tools_to_register.append(news_api)
-    except Exception as e:
-        # NewsAPI dependencies not available - skip
+    except Exception:
+        # NewsAPI not available - skip
         pass
 
     for tool in tools_to_register:
@@ -157,18 +179,25 @@ def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool 
 
 
 def get_or_create_agent():
-    """Get or create the agent instance."""
+    """Get or create the agent instance (lazy initialization on first use)."""
     if st.session_state.get('agent') is None:
+        # Show status during first-time initialization
+        status_placeholder = st.empty()
+        status_placeholder.info("🚀 Initializing AI agent... (first time only, ~3-5 seconds)")
+
         try:
-            with st.spinner("🚀 Initializing Agent with Phase 3 features..."):
-                agent = initialize_agent_system(
-                    enable_memory=st.session_state.enable_memory,
-                    enable_reflection=st.session_state.enable_reflection
-                )
-                st.session_state.agent = agent
-                st.session_state.agent_initialized = True
-                show_info("✅ Agent initialized with memory & reflection!")
+            agent = initialize_agent_system(
+                enable_memory=st.session_state.enable_memory,
+                enable_reflection=st.session_state.enable_reflection
+            )
+            st.session_state.agent = agent
+            st.session_state.agent_initialized = True
+
+            # Clear status message
+            status_placeholder.empty()
+
         except Exception as e:
+            status_placeholder.empty()
             show_error(f"Failed to initialize agent: {str(e)}")
             import traceback
             with st.expander("Show error details"):
@@ -184,131 +213,199 @@ def render_agent_sidebar():
     with st.sidebar:
         render_enhanced_sidebar_header()
 
-    # Agent Features Toggle
-    st.sidebar.subheader("🧠 Phase 3 Features")
+    # Agent Features Toggle - Enhanced with expander
+    with st.sidebar.expander("🧠 AI Features", expanded=True):
+        st.markdown("##### Enable Advanced Capabilities")
 
-    enable_memory = st.sidebar.checkbox(
-        "Enable Memory",
-        value=st.session_state.enable_memory,
-        help="Agent remembers conversation history and learns from past sessions"
-    )
+        enable_memory = st.checkbox(
+            "🧠 Memory System",
+            value=st.session_state.enable_memory,
+            help="Agent remembers conversation history and learns from past sessions",
+            key="enable_memory_checkbox"
+        )
 
-    enable_reflection = st.sidebar.checkbox(
-        "Enable Self-Reflection",
-        value=st.session_state.enable_reflection,
-        help="Agent evaluates its actions and learns from experience"
-    )
+        enable_reflection = st.checkbox(
+            "🔄 Self-Reflection",
+            value=st.session_state.enable_reflection,
+            help="Agent evaluates its actions and learns from experience",
+            key="enable_reflection_checkbox"
+        )
 
-    # Check if settings changed
-    if (enable_memory != st.session_state.enable_memory or
-        enable_reflection != st.session_state.enable_reflection):
-        st.session_state.enable_memory = enable_memory
-        st.session_state.enable_reflection = enable_reflection
-        st.session_state.agent = None  # Force reinit
-        st.session_state.agent_initialized = False
-        st.cache_resource.clear()
-        st.rerun()
-
-    st.sidebar.markdown("---")
-
-    # Display Options
-    st.sidebar.subheader("📊 Display Options")
-
-    st.session_state.show_agent_details = st.sidebar.checkbox(
-        "Show Agent Reasoning",
-        value=st.session_state.show_agent_details,
-        help="Display tool selection and execution details"
-    )
-
-    st.session_state.show_memory_context = st.sidebar.checkbox(
-        "Show Memory Context",
-        value=st.session_state.show_memory_context,
-        help="Display conversation memory and context"
-    )
-
-    st.session_state.show_reflection_insights = st.sidebar.checkbox(
-        "Show Reflection Insights",
-        value=st.session_state.show_reflection_insights,
-        help="Display self-reflection and learning statistics"
-    )
+        # Check if settings changed
+        if (enable_memory != st.session_state.enable_memory or
+            enable_reflection != st.session_state.enable_reflection):
+            st.session_state.enable_memory = enable_memory
+            st.session_state.enable_reflection = enable_reflection
+            st.session_state.agent = None  # Force reinit
+            st.session_state.agent_initialized = False
+            st.cache_resource.clear()
+            st.success("✅ Settings updated! Agent will restart.", icon="🔄")
+            st.rerun()
 
     st.sidebar.markdown("---")
 
-    # Session Stats
+    # Display Options - Enhanced with expander
+    with st.sidebar.expander("📊 Display Settings", expanded=False):
+        st.markdown("##### Customize Information Display")
+
+        st.session_state.show_agent_details = st.checkbox(
+            "🔍 Agent Reasoning",
+            value=st.session_state.show_agent_details,
+            help="Display tool selection and execution details",
+            key="show_details_checkbox"
+        )
+
+        st.session_state.show_memory_context = st.checkbox(
+            "💭 Memory Context",
+            value=st.session_state.show_memory_context,
+            help="Display conversation memory and context",
+            key="show_memory_checkbox"
+        )
+
+        st.session_state.show_reflection_insights = st.checkbox(
+            "🧠 Learning Insights",
+            value=st.session_state.show_reflection_insights,
+            help="Display self-reflection and learning statistics",
+            key="show_reflection_checkbox"
+        )
+
+    st.sidebar.markdown("---")
+
+    # Session Stats - Enhanced visualization
     if st.session_state.agent_initialized and st.session_state.agent:
-        st.sidebar.subheader("📈 Session Stats")
-        agent = st.session_state.agent
+        with st.sidebar.expander("📈 Session Statistics", expanded=True):
+            agent = st.session_state.agent
 
-        st.sidebar.metric("Queries", st.session_state.session_queries)
+            # Create stats grid
+            col1, col2 = st.columns(2)
 
-        if agent.enable_reflection and agent.learning_module:
-            perf = agent.learning_module.get_overall_performance()
-            st.sidebar.metric("Success Rate", f"{perf.get('success_rate', 0):.1%}")
-            st.sidebar.metric("Tools Used", perf.get('unique_tools_used', 0))
+            with col1:
+                st.metric(
+                    "📝 Queries",
+                    st.session_state.session_queries,
+                    delta="+1" if st.session_state.session_queries > 0 else None
+                )
 
-        # End Session Button
-        if st.sidebar.button("🏁 End Session & Save", use_container_width=True):
-            summary = agent.end_session()
-            st.sidebar.success("Session saved to episodic memory!")
+            with col2:
+                if agent.enable_reflection and agent.learning_module:
+                    perf = agent.learning_module.get_overall_performance()
+                    success_rate = perf.get('success_rate', 0)
+                    st.metric(
+                        "✅ Success",
+                        f"{success_rate:.0%}",
+                        delta=None
+                    )
+                else:
+                    st.metric("✅ Success", "N/A")
 
-            with st.sidebar.expander("Session Summary"):
-                st.json(summary)
+            # Additional metrics in two columns for better layout
+            if agent.enable_reflection and agent.learning_module:
+                perf = agent.learning_module.get_overall_performance()
+
+                col3, col4 = st.columns(2)
+
+                with col3:
+                    st.metric(
+                        "🛠️ Tools",
+                        perf.get('unique_tools_used', 0),
+                        help="Number of different tools used"
+                    )
+
+                with col4:
+                    st.metric(
+                        "⭐ Quality",
+                        f"{perf.get('avg_quality_score', 0):.1f}/5",
+                        help="Average quality score"
+                    )
+
+            st.markdown("---")
+
+            # End Session Button - Enhanced
+            if st.button("🏁 End & Save Session", use_container_width=True, type="primary"):
+                summary = agent.end_session()
+                st.success("✅ Session saved to memory!", icon="💾")
+
+                with st.expander("📋 View Session Summary"):
+                    st.json(summary)
 
     st.sidebar.markdown("---")
 
-    # Document Upload Section
-    st.sidebar.subheader("📁 Upload Documents")
+    # Document Upload Section - Enhanced
+    with st.sidebar.expander("📁 Document Upload", expanded=False):
+        st.markdown("##### Add Documents to Knowledge Base")
 
-    uploaded_files = st.sidebar.file_uploader(
-        "Upload documents to index",
-        type=['txt', 'md', 'pdf', 'docx'],
-        accept_multiple_files=True,
-        help="Upload .txt, .md, .pdf, or .docx files to add to the knowledge base"
-    )
+        uploaded_files = st.file_uploader(
+            "Drag and drop files here",
+            type=['txt', 'md', 'pdf', 'docx'],
+            accept_multiple_files=True,
+            help="Upload .txt, .md, .pdf, or .docx files to add to the knowledge base",
+            label_visibility="collapsed"
+        )
 
-    if uploaded_files:
-        if st.sidebar.button("📤 Process & Index", use_container_width=True):
-            with st.sidebar.status("Processing documents...") as status:
-                try:
-                    from pathlib import Path
-                    import shutil
+        if uploaded_files:
+            # Show file count
+            st.info(f"📚 {len(uploaded_files)} file(s) selected", icon="✨")
 
-                    # Create documents directory if it doesn't exist
-                    docs_dir = Path("data/documents")
-                    docs_dir.mkdir(parents=True, exist_ok=True)
+            # Show file names
+            with st.expander("View selected files"):
+                for file in uploaded_files:
+                    st.markdown(f"• {file.name} ({file.size / 1024:.1f} KB)")
 
-                    saved_files = []
-                    for uploaded_file in uploaded_files:
-                        # Save file
-                        file_path = docs_dir / uploaded_file.name
-                        with open(file_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        saved_files.append(uploaded_file.name)
-                        status.update(label=f"Saved {uploaded_file.name}...")
+            if st.button("📤 Process & Index Documents", use_container_width=True, type="primary"):
+                with st.status("Processing documents...", expanded=True) as status:
+                    try:
+                        from pathlib import Path
 
-                    status.update(label="Re-indexing vector store...")
+                        # Create documents directory if it doesn't exist
+                        docs_dir = Path("data/documents")
+                        docs_dir.mkdir(parents=True, exist_ok=True)
 
-                    # Force rebuild of vector store with new documents
-                    from src.system_init import initialize_system
-                    rag_chain = initialize_system(rebuild_index=True, use_documents=True)
+                        saved_files = []
+                        for idx, uploaded_file in enumerate(uploaded_files, 1):
+                            # Save file
+                            file_path = docs_dir / uploaded_file.name
+                            with open(file_path, "wb") as f:
+                                f.write(uploaded_file.getbuffer())
+                            saved_files.append(uploaded_file.name)
+                            status.update(
+                                label=f"📄 Saving {idx}/{len(uploaded_files)}: {uploaded_file.name}...",
+                                state="running"
+                            )
 
-                    # Clear cache and reinitialize agent with new vector store
-                    st.cache_resource.clear()
-                    st.session_state.agent = None
-                    st.session_state.agent_initialized = False
+                        status.update(label="🔄 Re-indexing vector store...", state="running")
 
-                    status.update(label="✅ Upload complete!", state="complete")
-                    st.sidebar.success(f"Uploaded {len(saved_files)} file(s):\n" + "\n".join(f"• {f}" for f in saved_files))
-                    st.rerun()
+                        # Force rebuild of vector store with new documents
+                        from src.system_init import initialize_system
+                        initialize_system(rebuild_index=True, use_documents=True)  # side effect only
 
-                except Exception as e:
-                    st.sidebar.error(f"Upload failed: {str(e)}")
+                        # Clear cache and reinitialize agent with new vector store
+                        st.cache_resource.clear()
+                        st.session_state.agent = None
+                        st.session_state.agent_initialized = False
+
+                        status.update(label="✅ Upload complete!", state="complete")
+                        st.success(f"✅ Successfully indexed {len(saved_files)} document(s)!", icon="🎉")
+                        st.rerun()
+
+                    except Exception as e:
+                        status.update(label="❌ Upload failed", state="error")
+                        st.error(f"Upload failed: {str(e)}", icon="🚨")
 
     st.sidebar.markdown("---")
 
     # Quick Actions with modern styling
     with st.sidebar:
         render_quick_actions()
+
+    st.sidebar.markdown("---")
+
+    # NEW: Start New Conversation
+    if st.sidebar.button("🔄 Start New Conversation", use_container_width=True, help="Clear chat and start fresh conversation"):
+        import uuid
+        st.session_state.messages = []
+        st.session_state.conversation_thread_id = f"streamlit_{uuid.uuid4().hex[:12]}"
+        st.session_state.session_queries = 0
+        st.rerun()
 
     st.sidebar.markdown("---")
 
@@ -359,7 +456,7 @@ def render_agent_details(result: Dict[str, Any]):
                     st.error(f"Error: {tool_result['error']}")
 
 
-def render_memory_context():
+def render_memory_context(unique_id: str = "default"):
     """Render memory context in a sidebar or expander."""
     if not st.session_state.show_memory_context:
         return
@@ -377,7 +474,8 @@ def render_memory_context():
                 value=memory_context,
                 height=200,
                 disabled=True,
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                key=f"memory_context_display_{unique_id}"
             )
         else:
             st.info("No conversation history yet")
@@ -454,7 +552,9 @@ def render_chat_message_agent(message: Dict):
     role = message.get('role', 'assistant')
     if role == 'assistant':
         if message.get('agent_result'):
-            render_memory_context()
+            # Pass unique ID based on message timestamp to avoid duplicate keys
+            msg_id = str(message.get('timestamp', id(message)))
+            render_memory_context(unique_id=msg_id)
             render_reflection_insights()
 
 
@@ -481,13 +581,26 @@ def handle_agent_query(prompt: str):
         show_error("Agent not initialized")
         return
 
-    # Execute agent
+    # Execute agent with conversation thread ID for memory continuity
     try:
         with st.spinner("🤖 Agent is thinking and selecting tools..."):
-            result = agent.execute(prompt)
+            result = agent.execute(
+                prompt,
+                thread_id=st.session_state.conversation_thread_id,
+                session_id=st.session_state.conversation_thread_id
+            )
 
         # Increment query count
         st.session_state.session_queries += 1
+
+        # Periodic auto-save of episodic memory (every 5 queries)
+        if st.session_state.session_queries % 5 == 0:
+            try:
+                if agent.enable_memory and agent.memory_manager:
+                    agent.memory_manager.save_episodic_memory()
+                    print(f"💾 Auto-saved episodic memory (query #{st.session_state.session_queries})")
+            except Exception as e:
+                print(f"⚠️  Failed to auto-save memory: {e}")
 
         # Extract answer
         answer = result.get('final_answer', 'No answer generated')
@@ -518,7 +631,7 @@ def handle_agent_query(prompt: str):
 
 def render_welcome_message_agent():
     """Render welcome message for agent interface with modern styling."""
-    # Modern header
+    # Modern header with animation
     st.markdown(
         get_custom_header_html(
             "RAG Agent Assistant",
@@ -527,55 +640,45 @@ def render_welcome_message_agent():
         unsafe_allow_html=True
     )
 
-    # Welcome content with modern cards
+    # Welcome content with modern styling
     st.markdown("""
-    <div style="background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(10px);
-         border: 1px solid #334155; border-radius: 16px; padding: 2rem; margin: 1rem 0;">
-        <h3 style="color: #f1f5f9; margin-top: 0;">👋 Welcome!</h3>
-        <p style="color: #cbd5e1; line-height: 1.6;">
-            I'm an <strong>intelligent agent</strong> powered by cutting-edge AI capabilities.
-            I can help you with research, calculations, code generation, and much more!
+    <div class="fade-in" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+         border: 1px solid #6366f1; border-radius: 20px; padding: 2.5rem; margin: 1.5rem 0; text-align: center;">
+        <h2 style="color: #f1f5f9; margin-top: 0; font-size: 2rem; font-weight: 700;">
+            👋 Welcome to Your AI Assistant!
+        </h2>
+        <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; max-width: 800px; margin: 1rem auto;">
+            I'm an <strong style="color: #818cf8;">intelligent agent</strong> powered by cutting-edge AI.
+            I can help you with <strong>research</strong>, <strong>calculations</strong>,
+            <strong>code generation</strong>, <strong>web browsing</strong>, and much more!
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Feature cards
-    col1, col2 = st.columns(2)
+    # Stats cards
+    st.markdown("---")
+    render_stats_cards()
+    st.markdown("---")
 
-    with col1:
-        st.markdown("""
-        <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid #6366f1;
-             border-radius: 12px; padding: 1.5rem; height: 100%;">
-            <h4 style="color: #818cf8; margin-top: 0;">🧠 Intelligent Features</h4>
-            <ul style="color: #cbd5e1; line-height: 1.8;">
-                <li><strong>Memory</strong>: I remember our conversations</li>
-                <li><strong>Self-Reflection</strong>: I learn from mistakes</li>
-                <li><strong>Multi-Tool</strong>: Access to 7+ specialized tools</li>
-                <li><strong>Web Agent</strong>: Autonomous web browsing</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+    # Feature cards with new component
+    render_welcome_cards()
 
-    with col2:
-        st.markdown("""
-        <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid #8b5cf6;
-             border-radius: 12px; padding: 1.5rem; height: 100%;">
-            <h4 style="color: #a78bfa; margin-top: 0;">💬 Try Asking Me</h4>
-            <ul style="color: #cbd5e1; line-height: 1.8;">
-                <li>"What is RAG and how does it work?"</li>
-                <li>"Calculate 15% of 3,450"</li>
-                <li>"Write Python code to sort a list"</li>
-                <li>"What documents are indexed?"</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Suggested prompts with click functionality
+    selected_prompt = render_suggested_prompts()
+
+    # If a prompt was selected, trigger it
+    if selected_prompt:
+        st.session_state['pending_prompt'] = selected_prompt
+        st.rerun()
 
     # Quick tip
     st.markdown("""
-    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;
-         border-radius: 12px; padding: 1rem; margin: 1rem 0;">
-        <p style="color: #34d399; margin: 0;">
-            💡 <strong>Pro Tip:</strong> Enable "Show Agent Reasoning" in the sidebar to see how I make decisions!
+    <div class="slide-up" style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;
+         border-radius: 12px; padding: 1.25rem; margin: 2rem 0; animation-delay: 0.8s;">
+        <p style="color: #34d399; margin: 0; font-size: 1rem;">
+            💡 <strong>Pro Tip:</strong> Enable "Show Agent Reasoning" in the sidebar to see how I make decisions and select tools!
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -583,17 +686,35 @@ def render_welcome_message_agent():
 
 def render_main_chat_agent():
     """Render the main chat interface with agent capabilities and modern UI."""
-    # Initialize agent
-    if not st.session_state.agent_initialized:
-        agent = get_or_create_agent()
-        if agent is None:
-            st.stop()
+    # Auto-index documents on first load
+    if 'startup_index_done' not in st.session_state:
+        try:
+            from .auto_index_integration import check_and_index_on_startup
+            with st.spinner("🔍 Checking for new documents to index..."):
+                result = check_and_index_on_startup(force=False)
+                if result['status'] == 'success' and result.get('new', 0) > 0:
+                    st.toast(f"✅ Indexed {result['new']} new documents!", icon="📚")
+        except Exception as e:
+            # Auto-indexing is optional - don't block app startup
+            print(f"⚠️  Auto-indexing failed: {e}")
+        finally:
+            st.session_state.startup_index_done = True
+
+    # Agent will be initialized on first use (lazy loading)
+    # This allows the UI to show immediately without waiting for heavy initialization
 
     # Check for errors
     error = get_error_message()
     if error:
         show_error(error)
         clear_error()
+
+    # Handle pending prompt from suggested prompts
+    pending_prompt = st.session_state.get('pending_prompt')
+    if pending_prompt:
+        st.session_state.pop('pending_prompt')
+        handle_agent_query(pending_prompt)
+        st.rerun()
 
     # Show welcome or chat history
     if not st.session_state.messages:
@@ -608,20 +729,30 @@ def render_main_chat_agent():
             unsafe_allow_html=True
         )
 
-        # Render chat history
-        for message in st.session_state.messages:
+        # Render chat history with smooth animations
+        for idx, message in enumerate(st.session_state.messages):
+            # Add animation class to messages
+            st.markdown(f'<div class="fade-in" style="animation-delay: {idx * 0.05}s;">', unsafe_allow_html=True)
             render_chat_message_agent(message)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    # Chat input
-    if prompt := st.chat_input("Ask me anything...", key='chat_input_agent'):
+    # Chat input with enhanced placeholder
+    placeholder_text = "💬 Ask me anything... (Try 'What documents are indexed?' or 'Calculate 15% of 3,450')"
+    if prompt := st.chat_input(placeholder_text, key='chat_input_agent'):
         # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Display assistant response
+        # Display assistant response with loading animation
         with st.chat_message("assistant"):
-            with st.spinner("Processing..."):
+            # Show typing indicator
+            typing_placeholder = st.empty()
+            with typing_placeholder:
+                render_typing_indicator()
+
+            try:
                 handle_agent_query(prompt)
+                typing_placeholder.empty()
 
                 # Display the response
                 if st.session_state.messages:
@@ -633,12 +764,45 @@ def render_main_chat_agent():
                             render_agent_details(last_msg['agent_result'])
                             render_memory_context()
                             render_reflection_insights()
+            except Exception as e:
+                typing_placeholder.empty()
+                st.error(f"Error: {str(e)}")
 
         st.rerun()
 
 
+def cleanup_resources():
+    """Cleanup resources on app exit."""
+    try:
+        # Close agent and save episodic memory
+        if hasattr(st.session_state, 'agent') and st.session_state.agent:
+            try:
+                # Save current session to episodic memory
+                st.session_state.agent.end_session()
+            except Exception as e:
+                print(f"⚠️  Error saving session on exit: {e}")
+
+        # Close database connections
+        try:
+            from src.database.session_manager import SessionManager
+            # Get session manager instance if it exists
+            if hasattr(SessionManager, '_instance'):
+                session_mgr = SessionManager._instance
+                if session_mgr:
+                    session_mgr.close()
+        except Exception as e:
+            print(f"⚠️  Error closing database connections: {e}")
+    except Exception as e:
+        print(f"⚠️  Cleanup error: {e}")
+
+
 def main():
     """Main application entry point."""
+    # Register cleanup function (only once)
+    if 'cleanup_registered' not in st.session_state:
+        atexit.register(cleanup_resources)
+        st.session_state.cleanup_registered = True
+
     configure_page()
     initialize_agent_session_state()
     render_agent_sidebar()

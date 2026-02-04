@@ -7,10 +7,9 @@ Evaluates policies, enforces rules, and tracks violations.
 import os
 import re
 import yaml
-from typing import Dict, List, Optional, Set, Any
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
-from pathlib import Path
 
 from .policy_definitions import (
     PolicyType,
@@ -23,8 +22,7 @@ from .policy_definitions import (
     AccessPolicy,
     PolicyEvaluationContext,
     PolicyDecision,
-    PolicyViolationRecord,
-    PolicyScope
+    PolicyViolationRecord
 )
 
 
@@ -344,9 +342,6 @@ class PolicyEngine:
                         break
 
             # Check execution limits
-            session_key = f"{context.session_id}:total"
-            tool_key = f"{context.session_id}:{context.tool_name}"
-
             if policy.max_executions_per_session:
                 session_count = sum(self.tool_executions[context.session_id].values())
                 if session_count >= policy.max_executions_per_session:
