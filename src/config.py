@@ -116,6 +116,13 @@ class Config:
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 
+    # Confluence Integration (Optional - for fetching documentation from Confluence)
+    CONFLUENCE_ENABLED = os.getenv("CONFLUENCE_ENABLED", "false").lower() == "true"
+    CONFLUENCE_URL = os.getenv("CONFLUENCE_URL", "")  # e.g., https://your-domain.atlassian.net/wiki
+    CONFLUENCE_USERNAME = os.getenv("CONFLUENCE_USERNAME", "")  # Your Atlassian email
+    CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN", "")  # API token from Atlassian
+    CONFLUENCE_SPACE_KEY = os.getenv("CONFLUENCE_SPACE_KEY", "")  # Default space to fetch from
+
     # ===== OBSERVABILITY CONFIGURATION =====
 
     # OpenTelemetry Settings

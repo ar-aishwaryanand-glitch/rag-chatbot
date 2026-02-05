@@ -391,6 +391,123 @@ def render_agent_sidebar():
                         status.update(label="❌ Upload failed", state="error")
                         st.error(f"Upload failed: {str(e)}", icon="🚨")
 
+    # Confluence Integration Section
+    from src.confluence_loader import is_confluence_configured, get_confluence_loader
+    if is_confluence_configured():
+        with st.sidebar.expander("🔗 Confluence Import", expanded=False):
+            st.markdown("##### Import from Confluence")
+
+            # Space key input
+            space_key = st.text_input(
+                "Space Key",
+                value=Config.CONFLUENCE_SPACE_KEY or "",
+                help="Confluence space key (e.g., 'DOCS', 'ENGINEERING')",
+                placeholder="Enter space key..."
+            )
+
+            # Fetch options
+            fetch_option = st.radio(
+                "Fetch mode",
+                options=["All pages from space", "Search pages", "Specific page ID"],
+                help="Choose how to fetch pages from Confluence"
+            )
+
+            search_query = None
+            page_id = None
+            limit = 50
+
+            if fetch_option == "Search pages":
+                search_query = st.text_input(
+                    "Search query",
+                    placeholder="Enter search terms...",
+                    help="Search for pages containing these terms"
+                )
+            elif fetch_option == "Specific page ID":
+                page_id = st.text_input(
+                    "Page ID",
+                    placeholder="Enter Confluence page ID...",
+                    help="The numeric page ID from Confluence"
+                )
+            else:
+                limit = st.slider("Max pages to fetch", 10, 100, 50)
+
+            if st.button("📥 Fetch from Confluence", use_container_width=True, type="secondary"):
+                if not space_key and fetch_option != "Specific page ID":
+                    st.error("Please enter a space key", icon="⚠️")
+                elif fetch_option == "Search pages" and not search_query:
+                    st.error("Please enter a search query", icon="⚠️")
+                elif fetch_option == "Specific page ID" and not page_id:
+                    st.error("Please enter a page ID", icon="⚠️")
+                else:
+                    with st.status("Fetching from Confluence...", expanded=True) as status:
+                        try:
+                            loader = get_confluence_loader()
+
+                            if fetch_option == "Specific page ID":
+                                status.update(label=f"📄 Fetching page {page_id}...", state="running")
+                                documents = loader.load_documents(page_ids=[page_id])
+                            elif fetch_option == "Search pages":
+                                status.update(label=f"🔍 Searching for '{search_query}'...", state="running")
+                                documents = loader.load_documents(
+                                    space_key=space_key,
+                                    search_query=search_query,
+                                    limit=limit
+                                )
+                            else:
+                                status.update(label=f"📚 Fetching pages from {space_key}...", state="running")
+                                documents = loader.load_documents(
+                                    space_key=space_key,
+                                    limit=limit
+                                )
+
+                            if not documents:
+                                status.update(label="⚠️ No pages found", state="complete")
+                                st.warning("No pages found matching your criteria", icon="⚠️")
+                            else:
+                                status.update(label=f"🔄 Indexing {len(documents)} pages...", state="running")
+
+                                # Add documents to vector store
+                                from src.system_init import initialize_system
+                                components = initialize_system(rebuild_index=False, use_documents=False)
+                                if components and 'document_manager' in components:
+                                    doc_manager = components['document_manager']
+
+                                    # Chunk and index the documents
+                                    all_chunks = []
+                                    for doc in documents:
+                                        chunks = doc_manager.embedding_manager.chunk_documents([doc])
+                                        all_chunks.extend(chunks)
+
+                                    if all_chunks:
+                                        doc_manager.add_documents(all_chunks)
+                                        doc_manager.save()
+
+                                        # Clear cache for fresh agent
+                                        st.cache_resource.clear()
+                                        st.session_state.agent = None
+                                        st.session_state.agent_initialized = False
+
+                                        status.update(label="✅ Import complete!", state="complete")
+                                        st.success(
+                                            f"✅ Imported {len(documents)} pages ({len(all_chunks)} chunks)!",
+                                            icon="🎉"
+                                        )
+                                        st.rerun()
+                                    else:
+                                        status.update(label="⚠️ No content to index", state="complete")
+                                        st.warning("Pages had no content to index", icon="⚠️")
+
+                        except Exception as e:
+                            status.update(label="❌ Import failed", state="error")
+                            st.error(f"Confluence import failed: {str(e)}", icon="🚨")
+    else:
+        with st.sidebar.expander("🔗 Confluence Import", expanded=False):
+            st.info(
+                "Confluence integration is not configured. "
+                "Set CONFLUENCE_ENABLED=true and add your credentials in .env",
+                icon="ℹ️"
+            )
+
     st.sidebar.markdown("---")
 
     # Quick Actions with modern styling
