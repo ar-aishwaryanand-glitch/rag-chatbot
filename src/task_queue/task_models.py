@@ -6,7 +6,7 @@ Defines task types, status, priorities, and data structures.
 
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from datetime import datetime
 import uuid
 

@@ -97,19 +97,36 @@ For detailed content from websites, use web_agent instead. Best for finding what
             if not results:
                 return f"No search results found for: {query}"
 
-            # Format results
-            formatted_results = [f"Search results for: {query}\n"]
+            # Format results - deduplicate similar content
+            content_parts = []
+            source_titles = []
+            seen_content = set()
 
-            for i, result in enumerate(results, 1):
+            for result in results:
                 title = result.get('title', 'No title')
                 body = result.get('body', 'No description')
-                href = result.get('href', 'No URL')
 
-                formatted_results.append(f"\n{i}. {title}")
-                formatted_results.append(f"   {body}")
-                formatted_results.append(f"   URL: {href}")
+                # Deduplicate by checking if similar content already added
+                # Use first 100 chars as fingerprint
+                fingerprint = body[:100].lower().strip()
 
-            return "\n".join(formatted_results)
+                if fingerprint not in seen_content and body != 'No description':
+                    content_parts.append(body)
+                    source_titles.append(title)
+                    seen_content.add(fingerprint)
+
+            # If no unique content found, return error
+            if not content_parts:
+                return f"Answer: Search found results but content was repetitive or unavailable. Please try a more specific query or use a different tool.\n\nSources: {query} (web search)"
+
+            # Combine unique content only
+            combined_content = " ".join(content_parts)
+
+            # Deduplicate source titles too
+            unique_sources = list(dict.fromkeys(source_titles))
+            sources_text = ", ".join(unique_sources)
+
+            return f"Answer: {combined_content}\n\nSources: {sources_text}"
 
         except ImportError:
             return "Error: ddgs package not installed. Install with: pip install ddgs"

@@ -82,5 +82,6 @@ Use this for numerical computations, math problems, or when the question involve
             import numexpr
             numexpr.validate(expression)
             return True
-        except:
+        except (ValueError, SyntaxError, TypeError, ImportError):
+            # Invalid expression or numexpr not available
             return False

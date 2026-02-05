@@ -1,8 +1,6 @@
 """Pinecone vector store management for RAG Agent POC."""
 
-import time
 from typing import List, Optional, Dict, Any
-from pathlib import Path
 from langchain_core.documents import Document
 
 from .config import Config
@@ -54,7 +52,7 @@ class PineconeVectorStoreManager:
             if self.index_name not in existing_indexes:
                 print(f"📦 Creating new Pinecone index: {self.index_name}")
                 print(f"   Dimension: {dimension}")
-                print(f"   This may take 30-60 seconds...")
+                print("   This may take 30-60 seconds...")
 
                 # Create index with serverless spec
                 pc.create_index(
@@ -86,7 +84,7 @@ class PineconeVectorStoreManager:
                 namespace=self.namespace
             )
 
-            print(f"✅ Pinecone vector store initialized")
+            print("✅ Pinecone vector store initialized")
 
         except ImportError:
             print("❌ Pinecone package not installed. Run: pip install pinecone-client langchain-pinecone")
@@ -218,7 +216,7 @@ class PineconeVectorStoreManager:
             namespace=self.namespace
         )
 
-        print(f"✅ Vectors deleted")
+        print("✅ Vectors deleted")
         return response
 
     def delete_all(self) -> Dict[str, Any]:
@@ -238,7 +236,7 @@ class PineconeVectorStoreManager:
             namespace=self.namespace
         )
 
-        print(f"✅ All vectors deleted")
+        print("✅ All vectors deleted")
         return response
 
     def get_index_stats(self) -> Dict[str, Any]:

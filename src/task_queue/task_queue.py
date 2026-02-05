@@ -11,9 +11,8 @@ Features:
 
 import os
 import json
-import time
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     import redis
@@ -27,8 +26,7 @@ from .task_models import (
     TaskStatus,
     TaskPriority,
     TaskResult,
-    QueueStats,
-    AgentTask
+    QueueStats
 )
 
 

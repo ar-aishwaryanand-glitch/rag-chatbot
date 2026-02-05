@@ -4,7 +4,6 @@ This module handles fetching content from URLs using the web agent,
 saving it to the upload directory, and integrating it with the vector store.
 """
 
-import os
 from pathlib import Path
 from typing import Tuple
 import streamlit as st
@@ -109,7 +108,7 @@ def fetch_url_content(url: str) -> Tuple[bool, str, str]:
         else:
             return False, "", result.error or "Failed to fetch URL content"
 
-    except ImportError as e:
+    except ImportError:
         return False, "", "Web agent not available. Please install playwright: pip install playwright && playwright install chromium"
     except Exception as e:
         return False, "", f"Error fetching URL: {str(e)}"
@@ -153,7 +152,7 @@ def save_url_content(url: str) -> Tuple[bool, str]:
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(f"Source URL: {url}\n")
-            f.write(f"=" * 80 + "\n\n")
+            f.write("=" * 80 + "\n\n")
             f.write(content)
 
         return True, f"Successfully saved content from {url} as {file_path.name}"

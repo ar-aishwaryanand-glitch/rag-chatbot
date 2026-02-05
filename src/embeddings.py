@@ -3,8 +3,52 @@
 from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from functools import lru_cache
 
 from .config import Config
+
+
+@lru_cache(maxsize=1)
+def _get_cached_embedding_model(provider: str, model_name: str):
+    """
+    Get cached embedding model instance.
+
+    This function caches the embedding model to avoid reloading it
+    on every EmbeddingManager instantiation, significantly improving performance.
+    """
+    if provider == "huggingface":
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+            return HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={'device': 'cpu'},
+                encode_kwargs={'normalize_embeddings': True}
+            )
+        except ImportError as e:
+            print(f"⚠️  Warning: Could not load HuggingFace embeddings: {e}")
+            print("   Installing required packages...")
+            import subprocess
+            subprocess.run(["pip", "install", "sentence-transformers", "-q"])
+            from langchain_huggingface import HuggingFaceEmbeddings
+            return HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={'device': 'cpu'},
+                encode_kwargs={'normalize_embeddings': True}
+            )
+
+    elif provider == "google":
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        return GoogleGenerativeAIEmbeddings(
+            model=model_name,
+            google_api_key=Config.GOOGLE_API_KEY
+        )
+
+    else:
+        raise ValueError(
+            f"Unsupported embedding provider: {provider}. "
+            "Supported providers: huggingface, google"
+        )
+
 
 class EmbeddingManager:
     """Manages text chunking and embedding generation."""
@@ -23,40 +67,11 @@ class EmbeddingManager:
 
     def _initialize_embedding_model(self):
         """Initialize the appropriate embedding model based on configuration."""
-        if Config.EMBEDDING_PROVIDER == "huggingface":
-            try:
-                from langchain_huggingface import HuggingFaceEmbeddings
-                print(f"📦 Loading HuggingFace embeddings: {Config.EMBEDDING_MODEL}")
-                return HuggingFaceEmbeddings(
-                    model_name=Config.EMBEDDING_MODEL,
-                    model_kwargs={'device': 'cpu'},  # Use CPU for compatibility
-                    encode_kwargs={'normalize_embeddings': True}
-                )
-            except ImportError as e:
-                print(f"⚠️  Warning: Could not load HuggingFace embeddings: {e}")
-                print("   Installing required packages...")
-                import subprocess
-                subprocess.run(["pip", "install", "sentence-transformers", "-q"])
-                from langchain_huggingface import HuggingFaceEmbeddings
-                return HuggingFaceEmbeddings(
-                    model_name=Config.EMBEDDING_MODEL,
-                    model_kwargs={'device': 'cpu'},
-                    encode_kwargs={'normalize_embeddings': True}
-                )
-
-        elif Config.EMBEDDING_PROVIDER == "google":
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            print(f"📦 Using Google embeddings: {Config.EMBEDDING_MODEL}")
-            return GoogleGenerativeAIEmbeddings(
-                model=Config.EMBEDDING_MODEL,
-                google_api_key=Config.GOOGLE_API_KEY
-            )
-
-        else:
-            raise ValueError(
-                f"Unsupported embedding provider: {Config.EMBEDDING_PROVIDER}. "
-                "Supported providers: huggingface, google"
-            )
+        # Use cached model for faster initialization
+        return _get_cached_embedding_model(
+            Config.EMBEDDING_PROVIDER,
+            Config.EMBEDDING_MODEL
+        )
 
     def chunk_documents(self, documents: List[dict]) -> List[Document]:
         """

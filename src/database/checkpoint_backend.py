@@ -56,6 +56,7 @@ class CheckpointManager:
         self.connection_string = connection_string or self._get_connection_string()
         self.enabled = self._check_enabled()
         self.checkpoint_saver = None
+        self._saver_context = None
 
         if self.enabled:
             self._initialize_saver()
@@ -89,13 +90,15 @@ class CheckpointManager:
     def _initialize_saver(self):
         """Initialize the PostgreSQL checkpoint saver."""
         try:
-            # Create checkpoint saver with connection string
-            self.checkpoint_saver = PostgresSaver.from_conn_string(
-                self.connection_string
-            )
+            # In newer versions, from_conn_string returns a context manager
+            # We need to enter the context and keep the saver
+            saver_context = PostgresSaver.from_conn_string(self.connection_string)
 
-            # Setup tables (creates checkpoint tables if they don't exist)
-            self.checkpoint_saver.setup()
+            # Enter the context manager to get the actual saver
+            self.checkpoint_saver = saver_context.__enter__()
+
+            # Store the context for cleanup
+            self._saver_context = saver_context
 
             print("✅ LangGraph checkpoint storage initialized")
 
@@ -104,6 +107,7 @@ class CheckpointManager:
             print("📝 Checkpointing will be disabled")
             self.enabled = False
             self.checkpoint_saver = None
+            self._saver_context = None
 
     def get_checkpointer(self):
         """
@@ -270,9 +274,13 @@ class CheckpointManager:
 
     def close(self):
         """Close checkpoint saver connections."""
-        if self.checkpoint_saver:
-            # PostgresSaver handles its own connection management
-            pass
+        if hasattr(self, '_saver_context') and self._saver_context:
+            try:
+                self._saver_context.__exit__(None, None, None)
+            except Exception as e:
+                print(f"⚠️  Error closing checkpoint saver: {e}")
+        self.checkpoint_saver = None
+        self._saver_context = None
 
 
 # Global checkpoint manager instance
@@ -297,5 +305,6 @@ def get_checkpoint_manager() -> CheckpointManager:
             _checkpoint_manager = CheckpointManager.__new__(CheckpointManager)
             _checkpoint_manager.enabled = False
             _checkpoint_manager.checkpoint_saver = None
+            _checkpoint_manager._saver_context = None
 
     return _checkpoint_manager

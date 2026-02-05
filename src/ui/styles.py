@@ -191,20 +191,41 @@ def get_modern_css() -> str:
         backdrop-filter: blur(10px);
         border: 1px solid var(--border-color) !important;
         border-radius: 12px !important;
-        padding: 1rem !important;
+        padding: 0.75rem !important;
         box-shadow: var(--shadow-sm);
+        min-height: 80px;
     }
 
     [data-testid="stMetricLabel"] {
         color: var(--text-secondary) !important;
-        font-size: 0.875rem !important;
+        font-size: 0.8rem !important;
         font-weight: 500 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: block !important;
     }
 
     [data-testid="stMetricValue"] {
         color: var(--text-primary) !important;
-        font-size: 1.5rem !important;
+        font-size: 1.25rem !important;
         font-weight: 700 !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+    }
+
+    /* Sidebar metrics - more compact */
+    [data-testid="stSidebar"] [data-testid="stMetric"] {
+        padding: 0.5rem !important;
+        min-height: 70px;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMetricLabel"] {
+        font-size: 0.75rem !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
     }
 
     /* ========== EXPANDERS ========== */
@@ -269,9 +290,21 @@ def get_modern_css() -> str:
     }
 
     /* ========== PROGRESS BARS ========== */
+    .stProgress > div {
+        background: rgba(51, 65, 85, 0.4) !important;
+        border-radius: 10px !important;
+        overflow: hidden;
+    }
+
     .stProgress > div > div {
         background: linear-gradient(90deg, var(--primary-color) 0%, var(--secondary-color) 100%) !important;
-        border-radius: 8px !important;
+        border-radius: 10px !important;
+        height: 10px !important;
+        transition: width 0.3s ease !important;
+    }
+
+    /* Progress bar in sidebar - more compact */
+    [data-testid="stSidebar"] .stProgress > div > div {
         height: 8px !important;
     }
 
@@ -394,6 +427,17 @@ def get_modern_css() -> str:
         }
     }
 
+    @keyframes slideUp {
+        from {
+            transform: translateY(20px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
     @keyframes pulse {
         0%, 100% {
             opacity: 1;
@@ -403,12 +447,51 @@ def get_modern_css() -> str:
         }
     }
 
+    @keyframes shimmer {
+        0% {
+            background-position: -1000px 0;
+        }
+        100% {
+            background-position: 1000px 0;
+        }
+    }
+
+    @keyframes float {
+        0%, 100% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    @keyframes glow {
+        0%, 100% {
+            box-shadow: 0 0 5px rgba(99, 102, 241, 0.5);
+        }
+        50% {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.8);
+        }
+    }
+
     .fade-in {
         animation: fadeIn 0.5s ease-out;
     }
 
     .slide-in {
         animation: slideIn 0.5s ease-out;
+    }
+
+    .slide-up {
+        animation: slideUp 0.6s ease-out;
+    }
+
+    .float {
+        animation: float 3s ease-in-out infinite;
+    }
+
+    .glow {
+        animation: glow 2s ease-in-out infinite;
     }
 
     /* ========== TYPING INDICATOR ========== */
@@ -489,6 +572,158 @@ def get_modern_css() -> str:
         border: 1px solid var(--primary-color);
     }
 
+    /* ========== SUGGESTED PROMPTS ========== */
+    .suggested-prompt {
+        background: rgba(30, 41, 59, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1rem 1.5rem;
+        margin: 0.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .suggested-prompt:hover {
+        background: rgba(99, 102, 241, 0.2);
+        border-color: var(--primary-color);
+        transform: translateX(5px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .suggested-prompt-icon {
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+
+    .suggested-prompt-text {
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+
+    /* ========== FEATURE CARDS ========== */
+    .feature-card {
+        background: rgba(30, 41, 59, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        transition: all 0.3s ease;
+    }
+
+    .feature-card:hover {
+        border-color: var(--primary-color);
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-xl);
+    }
+
+    .feature-card-icon {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        display: block;
+    }
+
+    .feature-card-title {
+        color: var(--text-primary);
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .feature-card-description {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+
+    /* ========== STATS CARD ========== */
+    .stats-card {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+        border: 1px solid var(--primary-color);
+        border-radius: 12px;
+        padding: 1.25rem;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .stats-card:hover {
+        transform: scale(1.05);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .stats-card-value {
+        color: var(--primary-light);
+        font-size: 2rem;
+        font-weight: 700;
+        display: block;
+        margin-bottom: 0.5rem;
+    }
+
+    .stats-card-label {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* ========== LOADING SKELETON ========== */
+    .skeleton {
+        background: linear-gradient(
+            90deg,
+            rgba(51, 65, 85, 0.4) 0%,
+            rgba(71, 85, 105, 0.6) 50%,
+            rgba(51, 65, 85, 0.4) 100%
+        );
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+        border-radius: 8px;
+    }
+
+    /* ========== TOOL BADGE ========== */
+    .tool-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(99, 102, 241, 0.2);
+        border: 1px solid var(--primary-color);
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--primary-light);
+        margin: 4px;
+        transition: all 0.2s ease;
+    }
+
+    .tool-badge:hover {
+        background: rgba(99, 102, 241, 0.3);
+        transform: scale(1.05);
+    }
+
+    /* ========== WELCOME SCREEN ========== */
+    .welcome-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .welcome-title {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .welcome-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+
     /* ========== RESPONSIVE DESIGN ========== */
     @media (max-width: 768px) {
         .custom-header h1 {
@@ -497,6 +732,18 @@ def get_modern_css() -> str:
 
         .stChatMessage {
             padding: 1rem !important;
+        }
+
+        .welcome-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .feature-card {
+            padding: 1rem;
+        }
+
+        .suggested-prompt {
+            padding: 0.75rem 1rem;
         }
     }
     </style>

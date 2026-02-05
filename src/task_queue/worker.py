@@ -4,20 +4,17 @@ Task worker for processing queued tasks.
 Workers consume tasks from the Redis queue and execute them.
 """
 
-import os
 import time
 import signal
 import uuid
 from typing import Optional, Callable
-from datetime import datetime
 
 from .task_queue import TaskQueue, get_task_queue
 from .task_models import (
     Task,
     TaskStatus,
     TaskType,
-    TaskResult,
-    AgentTask
+    TaskResult
 )
 
 

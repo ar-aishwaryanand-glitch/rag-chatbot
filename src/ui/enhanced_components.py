@@ -1,7 +1,7 @@
 """Enhanced UI components for modern chat interface."""
 
 import streamlit as st
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import time
 from datetime import datetime
 
@@ -169,49 +169,55 @@ def render_stats_dashboard():
     if not agent:
         return
 
-    st.markdown("### 📊 Performance Dashboard")
+    st.markdown("### 📊 Performance")
 
-    # Main metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Main metrics in 2x2 grid for better spacing
+    col1, col2 = st.columns(2)
 
     with col1:
         queries = st.session_state.get('session_queries', 0)
-        st.metric("Total Queries", queries, delta=None, delta_color="normal")
+        st.metric("🔢 Queries", queries)
 
     with col2:
-        if agent.enable_reflection and agent.learning_module:
-            perf = agent.learning_module.get_overall_performance()
-            success_rate = perf.get('success_rate', 0)
-            st.metric("Success Rate", f"{success_rate:.1%}", delta=None)
-        else:
-            st.metric("Success Rate", "N/A")
+        tools = len(agent.tool_registry.get_tool_names())
+        st.metric("🛠️ Tools", tools)
+
+    # Second row
+    col3, col4 = st.columns(2)
 
     with col3:
         if agent.enable_reflection and agent.learning_module:
             perf = agent.learning_module.get_overall_performance()
-            quality = perf.get('avg_quality_score', 0)
-            st.metric("Avg Quality", f"{quality:.1f}/5.0", delta=None)
+            success_rate = perf.get('success_rate', 0)
+            st.metric("✅ Success", f"{success_rate:.0%}")
         else:
-            st.metric("Avg Quality", "N/A")
+            st.metric("✅ Success", "N/A")
 
     with col4:
-        tools = len(agent.tool_registry.get_tool_names())
-        st.metric("Available Tools", tools)
+        if agent.enable_reflection and agent.learning_module:
+            perf = agent.learning_module.get_overall_performance()
+            quality = perf.get('avg_quality_score', 0)
+            st.metric("⭐ Quality", f"{quality:.1f}/5")
+        else:
+            st.metric("⭐ Quality", "N/A")
 
-    # Tool usage chart
+    # Tool usage chart with improved layout
     if agent.enable_reflection and agent.learning_module:
         st.markdown("---")
-        st.markdown("**🛠️ Tool Performance**")
+        st.markdown("**🔧 Tool Rankings**")
 
         rankings = agent.learning_module.get_tool_ranking()
         if rankings:
             for tool, score in rankings[:5]:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    progress_value = min(score / 10, 1.0)
-                    st.progress(progress_value, text=tool)
-                with col2:
-                    st.caption(f"Score: {score:.1f}")
+                # Create a cleaner display
+                progress_value = min(score / 10, 1.0)
+
+                # Tool name and score on same line
+                st.markdown(f"**{tool}** • Score: {score:.1f}")
+                st.progress(progress_value)
+                st.markdown("")  # Add spacing
+        else:
+            st.info("No tool performance data yet", icon="📊")
 
 
 def render_enhanced_sidebar_header():
@@ -313,17 +319,58 @@ def render_quick_actions():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🗑️ Clear Chat", use_container_width=True, type="secondary"):
+        if st.button("🗑️ Clear Chat", use_container_width=True, type="secondary", help="Clear all messages"):
             st.session_state.messages = []
             st.session_state.session_queries = 0
             st.rerun()
 
     with col2:
-        if st.button("🔄 Restart Agent", use_container_width=True, type="secondary"):
+        if st.button("🔄 Restart Agent", use_container_width=True, type="secondary", help="Restart agent system"):
             st.session_state.agent = None
             st.session_state.agent_initialized = False
             st.cache_resource.clear()
             st.rerun()
+
+
+def render_suggested_prompts():
+    """Render suggested prompts for users to click."""
+    suggested_prompts = [
+        {"icon": "📚", "text": "What is RAG and how does it work?"},
+        {"icon": "🔍", "text": "Search for information about machine learning"},
+        {"icon": "🧮", "text": "Calculate 15% of 3,450"},
+        {"icon": "🐍", "text": "Write Python code to sort a list"},
+        {"icon": "📄", "text": "What documents are currently indexed?"},
+        {"icon": "🌐", "text": "What are the latest AI news?"},
+    ]
+
+    st.markdown("### 💬 Try These Prompts")
+
+    # Display prompts in 2 columns
+    col1, col2 = st.columns(2)
+
+    for idx, prompt in enumerate(suggested_prompts):
+        col = col1 if idx % 2 == 0 else col2
+
+        with col:
+            prompt_html = f"""
+            <div class="suggested-prompt slide-up" style="animation-delay: {idx * 0.1}s;">
+                <span class="suggested-prompt-icon">{prompt['icon']}</span>
+                <span class="suggested-prompt-text">{prompt['text']}</span>
+            </div>
+            """
+            st.markdown(prompt_html, unsafe_allow_html=True)
+
+            # Create invisible button overlay
+            if st.button(
+                prompt['text'],
+                key=f"suggested_{idx}",
+                use_container_width=True,
+                type="secondary",
+                help=f"Click to ask: {prompt['text']}"
+            ):
+                return prompt['text']
+
+    return None
 
 
 def format_code_block(code: str, language: str = "python") -> str:
@@ -348,3 +395,91 @@ def format_code_block(code: str, language: str = "python") -> str:
         </button>
     </div>
     """
+
+
+def render_welcome_cards():
+    """Render feature cards for the welcome screen."""
+    features = [
+        {
+            "icon": "🧠",
+            "title": "Intelligent Memory",
+            "description": "I remember our conversations and learn from past interactions to provide better answers over time.",
+            "color": "#6366f1"
+        },
+        {
+            "icon": "🔍",
+            "title": "Smart Search",
+            "description": "Search through uploaded documents and web sources with advanced RAG technology for accurate answers.",
+            "color": "#8b5cf6"
+        },
+        {
+            "icon": "🛠️",
+            "title": "Multi-Tool Agent",
+            "description": "Access to 7+ specialized tools including web search, code execution, calculations, and file operations.",
+            "color": "#10b981"
+        },
+        {
+            "icon": "🌐",
+            "title": "Web Browsing",
+            "description": "Autonomous web agent that can fetch and analyze content from websites in real-time.",
+            "color": "#f59e0b"
+        },
+        {
+            "icon": "🔄",
+            "title": "Self-Reflection",
+            "description": "Evaluates its own decisions and learns from mistakes to continuously improve performance.",
+            "color": "#ec4899"
+        },
+        {
+            "icon": "⚡",
+            "title": "Fast & Reliable",
+            "description": "Optimized for speed with 3-5 second response times and async database operations.",
+            "color": "#06b6d4"
+        }
+    ]
+
+    st.markdown('<div class="welcome-grid">', unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns(3)
+    cols = [col1, col2, col3]
+
+    for idx, feature in enumerate(features):
+        col = cols[idx % 3]
+
+        with col:
+            card_html = f"""
+            <div class="feature-card slide-up" style="animation-delay: {idx * 0.1}s;">
+                <span class="feature-card-icon float" style="animation-delay: {idx * 0.2}s;">{feature['icon']}</span>
+                <div class="feature-card-title" style="color: {feature['color']};">
+                    {feature['title']}
+                </div>
+                <div class="feature-card-description">
+                    {feature['description']}
+                </div>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_stats_cards():
+    """Render statistics cards for the welcome screen."""
+    stats = [
+        {"value": "7+", "label": "Specialized Tools"},
+        {"value": "3-5s", "label": "Avg Response Time"},
+        {"value": "100%", "label": "Source Attribution"},
+        {"value": "∞", "label": "Conversation Memory"}
+    ]
+
+    cols = st.columns(4)
+
+    for idx, (col, stat) in enumerate(zip(cols, stats)):
+        with col:
+            card_html = f"""
+            <div class="stats-card fade-in" style="animation-delay: {idx * 0.1}s;">
+                <span class="stats-card-value">{stat['value']}</span>
+                <span class="stats-card-label">{stat['label']}</span>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)

@@ -32,6 +32,8 @@ class AgentState(TypedDict):
 
     # Memory context
     memory_context: Optional[str]
+    conversation_messages: Optional[List[Dict[str, Any]]]  # Serialized conversation history
+    answer_from_memory: bool  # Flag to indicate if answering from memory without tools
 
     # Metadata
     start_time: Optional[float]

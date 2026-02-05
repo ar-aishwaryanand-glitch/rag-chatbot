@@ -2,7 +2,6 @@
 
 import time
 from typing import List, Optional
-from pathlib import Path
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
@@ -60,7 +59,7 @@ class VectorStoreManager:
             documents=first_batch,
             embedding=self.embedding_manager.embedding_model
         )
-        print(f"✓ Batch 1 completed")
+        print("✓ Batch 1 completed")
 
         # Process remaining chunks in batches
         for i in range(batch_size, len(chunks), batch_size):

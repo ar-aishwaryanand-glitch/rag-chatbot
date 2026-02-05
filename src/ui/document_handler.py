@@ -4,7 +4,6 @@ This module handles file uploads, validation, sanitization, and
 management of uploaded documents.
 """
 
-import os
 from pathlib import Path
 from typing import List, Tuple, Dict
 import streamlit as st

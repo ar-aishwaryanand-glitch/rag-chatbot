@@ -31,10 +31,9 @@ class RAGTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return """Search through indexed documents to find relevant information. \
-Use this tool when the question is about specific content in documents, \
-knowledge bases, or requires factual information from stored documents. \
-This tool searches the document collection and returns answers with source citations."""
+        return """Search through uploaded documents (PDFs, files) in the knowledge base. \
+Use for questions about technical content, research papers, or information stored in documents. \
+NOT for questions about this conversation or chat history. Returns answers with document source citations."""
 
     def _run(self, query: str, top_k: int = 3) -> str:
         """
@@ -61,22 +60,10 @@ This tool searches the document collection and returns answers with source citat
 
             # Format the result for the agent
             answer = result.get('answer', 'No answer generated')
-            sources = result.get('sources', [])
 
-            # Build formatted output
-            output_parts = [f"Answer: {answer}", "", "Sources:"]
-
-            for i, source in enumerate(sources, 1):
-                # Safely extract source fields with defaults
-                source_name = source.get('source', 'Unknown')
-                topic = source.get('topic', 'No topic')
-                content = source.get('content', '')
-                preview = content[:150] + "..." if len(content) > 150 else content
-
-                output_parts.append(f"{i}. Source: {source_name} (Topic: {topic})")
-                output_parts.append(f"   Preview: {preview}")
-
-            return "\n".join(output_parts)
+            # The answer already includes "Sources:" at the end from the LLM
+            # Just return it directly without adding duplicate source information
+            return f"Answer: {answer}"
 
         except Exception as e:
             return f"Error executing document search: {str(e)}"

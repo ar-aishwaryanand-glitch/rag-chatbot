@@ -18,7 +18,7 @@ load_dotenv()
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.queue import TaskWorker, get_task_queue
+from src.task_queue import TaskWorker, get_task_queue
 from src.agent.agent_executor_v3 import AgentExecutorV3
 from src.agent.tool_registry import ToolRegistry
 from src.config import Config

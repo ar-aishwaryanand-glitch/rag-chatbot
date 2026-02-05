@@ -36,7 +36,7 @@ class Config:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
 
     # Retrieval Configuration
-    TOP_K_RESULTS = 3  # Number of chunks to retrieve
+    TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "5"))  # Number of chunks to retrieve
 
     # Vector Store Configuration
     VECTOR_STORE_PATH = Path(__file__).parent.parent / "data" / "vector_store"
@@ -56,7 +56,7 @@ class Config:
     # LLM Configuration
     LLM_MODEL = GROQ_MODEL if LLM_PROVIDER == "groq" else GEMINI_MODEL
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
-    LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "1024"))
+    LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2048"))
 
     # ===== AGENT CONFIGURATION =====
 
