@@ -1,11 +1,18 @@
 """Unified document manager that supports multiple vector store backends."""
 
-from typing import List, Optional, Dict, Any, Literal
+# Standard library
 from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+# Third-party
 from langchain_core.documents import Document
 
+# Local
 from .config import Config
 from .embeddings import EmbeddingManager
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 VectorStoreType = Literal["faiss", "pinecone"]
@@ -44,7 +51,7 @@ class DocumentManager:
         # Initialize the appropriate backend
         self.backend = self._initialize_backend()
 
-        print(f"📦 Document Manager initialized with {self.vector_store_type.upper()} backend")
+        logger.info(f"Document Manager initialized with {self.vector_store_type.upper()} backend")
 
     def _detect_vector_store_type(self) -> VectorStoreType:
         """Auto-detect which vector store to use based on configuration."""
@@ -203,7 +210,7 @@ class DocumentManager:
             else:
                 self.backend.save_vector_store()
         else:
-            print("⚠️  Save not applicable for Pinecone (data is persisted automatically)")
+            logger.warning("Save not applicable for Pinecone (data is persisted automatically)")
 
     def load(self, path: Optional[Path] = None):
         """
@@ -221,7 +228,7 @@ class DocumentManager:
             else:
                 self.backend.load_vector_store()
         else:
-            print("⚠️  Load not applicable for Pinecone (data is always available)")
+            logger.warning("Load not applicable for Pinecone (data is always available)")
 
     # ===== Management Operations =====
 
@@ -235,16 +242,14 @@ class DocumentManager:
         if self.vector_store_type == "pinecone":
             return self.backend.delete_by_filter(filter)
         else:
-            print("⚠️  Delete by filter not supported for FAISS")
-            print("   Tip: Recreate the vector store without unwanted documents")
+            logger.warning("Delete by filter not supported for FAISS. Tip: Recreate the vector store without unwanted documents")
 
     def delete_all(self):
         """Delete all documents (Pinecone only)."""
         if self.vector_store_type == "pinecone":
             return self.backend.delete_all()
         else:
-            print("⚠️  Delete all not supported for FAISS")
-            print("   Tip: Delete the vector store directory to start fresh")
+            logger.warning("Delete all not supported for FAISS. Tip: Delete the vector store directory to start fresh")
 
     def get_stats(self) -> Dict[str, Any]:
         """

@@ -7,6 +7,10 @@ Uses LLM to evaluate relevance of articles, web pages, or other content.
 from typing import List, Dict, Any
 from dataclasses import dataclass
 
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class RelevanceResult:
@@ -166,7 +170,7 @@ REASON: Article directly discusses the topic mentioned in the query."""
             )
 
         except Exception as e:
-            print(f"⚠️ LLM evaluation failed: {e}, falling back to keyword matching")
+            logger.warning(f"LLM evaluation failed: {e}, falling back to keyword matching")
             return self._evaluate_with_keywords(query, title, description)
 
     def _evaluate_with_keywords(
@@ -192,10 +196,11 @@ REASON: Article directly discusses the topic mentioned in the query."""
         meaningful_common = common_words - stop_words
 
         # Calculate confidence based on overlap
-        if len(query_words - stop_words) == 0:
+        meaningful_query_words = query_words - stop_words
+        if not meaningful_query_words:
             confidence = 0.5
         else:
-            confidence = len(meaningful_common) / len(query_words - stop_words)
+            confidence = len(meaningful_common) / len(meaningful_query_words)
 
         is_relevant = confidence >= self.threshold
 
@@ -238,9 +243,8 @@ REASON: Article directly discusses the topic mentioned in the query."""
             result = self.evaluate_article(query, title, description, use_llm)
 
             if verbose:
-                status = "✓ RELEVANT" if result.is_relevant else "✗ NOT RELEVANT"
-                print(f"{status} ({result.confidence:.2f}): {title[:60]}...")
-                print(f"  Reason: {result.reason}")
+                status = "RELEVANT" if result.is_relevant else "NOT RELEVANT"
+                logger.info(f"{status} ({result.confidence:.2f}): {title[:60]}... Reason: {result.reason}")
 
             if result.is_relevant:
                 # Add relevance metadata to article

@@ -8,12 +8,15 @@ This module provides high-level session management:
 - Session search and filtering
 """
 
-import os
 import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+from src.logging_config import get_logger
+from src.config import Config
 from .postgres_backend import PostgresBackend
+
+logger = get_logger(__name__)
 from .models import Session, Message, EpisodicMemory, SessionStats
 
 
@@ -40,8 +43,7 @@ class SessionManager:
                 self.backend = PostgresBackend(connection_string)
                 self.backend.initialize_database()
             except Exception as e:
-                print(f"⚠️  PostgreSQL connection failed: {e}")
-                print("📝 Falling back to file-based memory storage")
+                logger.warning(f"PostgreSQL connection failed: {e}. Falling back to file-based memory storage")
                 self.enabled = False
                 self.backend = None
         else:
@@ -49,7 +51,7 @@ class SessionManager:
 
     def _check_postgres_enabled(self) -> bool:
         """Check if PostgreSQL is enabled via environment variable."""
-        return os.getenv('USE_POSTGRES', 'false').lower() == 'true'
+        return Config.USE_POSTGRES
 
     def is_available(self) -> bool:
         """Check if PostgreSQL backend is available."""
@@ -85,7 +87,7 @@ class SessionManager:
                 return session_id
             return None
         except Exception as e:
-            print(f"Error creating session: {e}")
+            logger.error(f"Error creating session: {e}")
             return None
 
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -189,7 +191,7 @@ class SessionManager:
                 } if stats else None
             }
         except Exception as e:
-            print(f"Error restoring session: {e}")
+            logger.error(f"Error restoring session: {e}")
             return None
 
     def update_session_title(self, session_id: str, title: str) -> bool:
@@ -245,7 +247,7 @@ class SessionManager:
             message_id = self.backend.add_message(message)
             return message_id is not None
         except Exception as e:
-            print(f"Error logging message: {e}")
+            logger.error(f"Error logging message: {e}")
             return False
 
     def get_conversation_history(self, session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -313,7 +315,7 @@ class SessionManager:
             memory_id = self.backend.add_memory(memory)
             return memory_id is not None
         except Exception as e:
-            print(f"Error storing memory: {e}")
+            logger.error(f"Error storing memory: {e}")
             return False
 
     def get_session_memories(self, session_id: str, memory_type: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -367,7 +369,7 @@ class SessionManager:
 
             return self.backend.update_stats(stats)
         except Exception as e:
-            print(f"Error updating stats: {e}")
+            logger.error(f"Error updating stats: {e}")
             return False
 
     # Search and filter

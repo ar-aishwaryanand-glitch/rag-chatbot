@@ -682,5 +682,4 @@ if state.get('conversation_messages'):
 
 - [Agent System](AGENT_SYSTEM.md) - How memory integrates with agent
 - [Database Persistence](DATABASE_PERSISTENCE.md) - Checkpoint storage
-- [Configuration](CONFIGURATION.md) - Memory settings
-- [Conversation Memory Fix](../CONVERSATION_MEMORY_FIX.md) - Implementation details
+- [Configuration](../CONFIGURATION.md) - Memory settings

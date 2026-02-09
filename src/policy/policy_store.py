@@ -5,10 +5,14 @@ Enables persistent policy management and audit trails.
 """
 
 import json
-import os
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from contextlib import contextmanager
+
+from src.logging_config import get_logger
+from src.config import Config
+
+logger = get_logger(__name__)
 
 try:
     import psycopg2
@@ -57,22 +61,11 @@ class PolicyStore:
 
     def _check_enabled(self) -> bool:
         """Check if PostgreSQL is enabled."""
-        return os.getenv('USE_POSTGRES', 'false').lower() == 'true'
+        return Config.USE_POSTGRES
 
     def _get_connection_string(self) -> str:
         """Get PostgreSQL connection string."""
-        conn_str = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
-
-        if conn_str:
-            return conn_str
-
-        user = os.getenv('POSTGRES_USER', 'postgres')
-        password = os.getenv('POSTGRES_PASSWORD', 'postgres')
-        host = os.getenv('POSTGRES_HOST', 'localhost')
-        port = os.getenv('POSTGRES_PORT', '5432')
-        database = os.getenv('POSTGRES_DB', 'rag_chatbot')
-
-        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        return Config.get_postgres_connection_string(use_psycopg_format=False)
 
     def _initialize_pool(self):
         """Initialize connection pool."""
@@ -82,9 +75,9 @@ class PolicyStore:
                 maxconn=5,
                 dsn=self.connection_string
             )
-            print("✅ Policy store initialized")
+            logger.info("Policy store initialized")
         except Exception as e:
-            print(f"⚠️  Failed to initialize policy store: {e}")
+            logger.warning(f"Failed to initialize policy store: {e}")
             self.enabled = False
 
     @contextmanager
@@ -170,7 +163,7 @@ class PolicyStore:
             conn.commit()
             cursor.close()
 
-            print("✅ Policy tables created")
+            logger.info("Policy tables created")
 
     def save_policy(self, policy: PolicyRule) -> bool:
         """Save or update a policy."""
@@ -224,7 +217,7 @@ class PolicyStore:
                 return True
 
         except Exception as e:
-            print(f"⚠️  Failed to save policy: {e}")
+            logger.warning(f"Failed to save policy: {e}")
             return False
 
     def get_policy(self, rule_id: str) -> Optional[PolicyRule]:
@@ -252,7 +245,7 @@ class PolicyStore:
                 return None
 
         except Exception as e:
-            print(f"⚠️  Failed to get policy: {e}")
+            logger.warning(f"Failed to get policy: {e}")
             return None
 
     def list_policies(self, policy_type: Optional[PolicyType] = None,
@@ -287,7 +280,7 @@ class PolicyStore:
                 return [self._deserialize_policy(row) for row in rows]
 
         except Exception as e:
-            print(f"⚠️  Failed to list policies: {e}")
+            logger.warning(f"Failed to list policies: {e}")
             return []
 
     def delete_policy(self, rule_id: str) -> bool:
@@ -311,7 +304,7 @@ class PolicyStore:
                 return True
 
         except Exception as e:
-            print(f"⚠️  Failed to delete policy: {e}")
+            logger.warning(f"Failed to delete policy: {e}")
             return False
 
     def record_violation(self, violation: PolicyViolationRecord) -> bool:
@@ -350,7 +343,7 @@ class PolicyStore:
                 return True
 
         except Exception as e:
-            print(f"⚠️  Failed to record violation: {e}")
+            logger.warning(f"Failed to record violation: {e}")
             return False
 
     def get_violations(self, session_id: Optional[str] = None,
@@ -388,7 +381,7 @@ class PolicyStore:
                 return [self._deserialize_violation(row) for row in rows]
 
         except Exception as e:
-            print(f"⚠️  Failed to get violations: {e}")
+            logger.warning(f"Failed to get violations: {e}")
             return []
 
     def _serialize_policy(self, policy: PolicyRule) -> Dict[str, Any]:
@@ -566,7 +559,7 @@ def get_policy_store() -> PolicyStore:
         try:
             _policy_store = PolicyStore()
         except Exception as e:
-            print(f"⚠️  Could not initialize policy store: {e}")
+            logger.warning(f"Could not initialize policy store: {e}")
             # Create disabled store
             _policy_store = PolicyStore.__new__(PolicyStore)
             _policy_store.enabled = False

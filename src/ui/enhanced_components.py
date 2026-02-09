@@ -54,16 +54,16 @@ def render_agent_result_card(result: Dict[str, Any]):
         return
 
     with st.expander("🔍 Agent Reasoning", expanded=False):
-        # Performance metrics
+        # Performance metrics in compact grid
         metrics_cols = st.columns(4)
 
         with metrics_cols[0]:
             tool = result.get('selected_tool', 'N/A')
-            st.metric("Tool Used", tool if tool != 'N/A' else "Direct Answer")
+            st.metric("Tool Used", tool if tool != 'N/A' else "Direct")
 
         with metrics_cols[1]:
             phase = result.get('current_phase', 'completed')
-            st.metric("Phase", phase.title())
+            st.metric("Phase", phase.title()[:8])
 
         with metrics_cols[2]:
             iterations = result.get('iteration', 0)
@@ -77,7 +77,7 @@ def render_agent_result_card(result: Dict[str, Any]):
         # Tool execution results
         if result.get('tool_results'):
             st.markdown("---")
-            st.markdown("**🛠️ Tool Execution Results**")
+            st.markdown("**🛠️ Tool Execution**")
 
             for i, tool_result in enumerate(result['tool_results'], 1):
                 success = tool_result.get('success', False)
@@ -85,16 +85,16 @@ def render_agent_result_card(result: Dict[str, Any]):
                 duration = tool_result.get('duration', 0)
                 error = tool_result.get('error')
 
-                # Status badge
-                status = "✅ Success" if success else "❌ Failed"
+                # Status badge with new colors
+                status = "✅" if success else "❌"
                 badge_html = f"""
-                <div style="display: inline-flex; align-items: center; gap: 8px;
-                     padding: 8px 12px; background: {'rgba(16, 185, 129, 0.1)' if success else 'rgba(239, 68, 68, 0.1)'};
+                <div style="display: inline-flex; align-items: center; gap: 6px;
+                     padding: 6px 10px; background: {'rgba(16, 185, 129, 0.1)' if success else 'rgba(239, 68, 68, 0.1)'};
                      border: 1px solid {'#10b981' if success else '#ef4444'};
-                     border-radius: 8px; margin: 4px 0;">
-                    <strong>{status}</strong>
-                    <span style="color: #cbd5e1;">{tool_name}</span>
-                    <span style="color: #94a3b8;">({duration:.2f}s)</span>
+                     border-radius: 6px; margin: 3px 0; font-size: 0.85rem;">
+                    <span>{status}</span>
+                    <span style="color: #f1f5f9; font-weight: 500;">{tool_name}</span>
+                    <span style="color: #94a3b8; font-size: 0.8rem;">({duration:.2f}s)</span>
                 </div>
                 """
                 st.markdown(badge_html, unsafe_allow_html=True)
@@ -118,20 +118,20 @@ def render_sources_card(sources: List[Dict[str, str]]):
 
             # Source card
             card_html = f"""
-            <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid #334155;
-                 border-radius: 12px; padding: 1rem; margin: 0.5rem 0;
-                 backdrop-filter: blur(10px);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">📄</span>
-                        <strong style="color: #f1f5f9;">{source_name}</strong>
+            <div style="background: rgba(22, 32, 50, 0.6); border: 1px solid #1e3a5f;
+                 border-radius: 10px; padding: 0.75rem; margin: 0.35rem 0;
+                 backdrop-filter: blur(10px); transition: all 0.2s ease;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 1rem;">📄</span>
+                        <strong style="color: #f1f5f9; font-size: 0.9rem;">{source_name}</strong>
                     </div>
-                    <span style="background: rgba(99, 102, 241, 0.2); color: #818cf8;
-                         padding: 4px 12px; border-radius: 12px; font-size: 0.85rem;">
+                    <span style="background: rgba(6, 182, 212, 0.2); color: #22d3ee;
+                         padding: 3px 10px; border-radius: 10px; font-size: 0.75rem; font-weight: 500;">
                         {topic}
                     </span>
                 </div>
-                <p style="color: #cbd5e1; font-size: 0.9rem; margin: 0; line-height: 1.5;">
+                <p style="color: #cbd5e1; font-size: 0.85rem; margin: 0; line-height: 1.4;">
                     {content_preview}
                 </p>
             </div>
@@ -142,12 +142,12 @@ def render_sources_card(sources: List[Dict[str, str]]):
 def render_typing_indicator():
     """Render a typing indicator animation."""
     typing_html = """
-    <div style="display: flex; align-items: center; gap: 4px; padding: 1rem;">
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: #6366f1;
+    <div style="display: flex; align-items: center; gap: 6px; padding: 0.75rem;">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #06b6d4;
               animation: pulse 1.4s ease-in-out infinite;"></span>
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: #6366f1;
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #14b8a6;
               animation: pulse 1.4s ease-in-out 0.2s infinite;"></span>
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: #6366f1;
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #22d3ee;
               animation: pulse 1.4s ease-in-out 0.4s infinite;"></span>
     </div>
     <style>
@@ -223,13 +223,13 @@ def render_stats_dashboard():
 def render_enhanced_sidebar_header():
     """Render an enhanced sidebar header."""
     header_html = """
-    <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-         padding: 1.25rem; border-radius: 12px; margin-bottom: 1rem;
-         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-        <h2 style="color: white; margin: 0; font-size: 1.25rem; font-weight: 700;">
-            🧪 QA Expert
+    <div style="background: linear-gradient(135deg, #06b6d4 0%, #14b8a6 100%);
+         padding: 1rem; border-radius: 10px; margin-bottom: 0.75rem;
+         box-shadow: 0 8px 12px -3px rgba(6, 182, 212, 0.2);">
+        <h2 style="color: white; margin: 0; font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.25rem;">🧪</span> QA Expert
         </h2>
-        <p style="color: rgba(255, 255, 255, 0.9); margin: 0.25rem 0 0 0; font-size: 0.85rem;">
+        <p style="color: rgba(255, 255, 255, 0.85); margin: 0.2rem 0 0 0; font-size: 0.8rem;">
             Settings & Tools
         </p>
     </div>
@@ -251,10 +251,10 @@ def render_feature_card(title: str, description: str, enabled: bool, key: str) -
         New state value
     """
     card_html = f"""
-    <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid #334155;
-         border-radius: 12px; padding: 1rem; margin: 0.5rem 0; backdrop-filter: blur(10px);">
-        <strong style="color: #f1f5f9; font-size: 1rem;">{title}</strong>
-        <p style="color: #cbd5e1; font-size: 0.85rem; margin: 0.5rem 0 0 0;">
+    <div style="background: rgba(22, 32, 50, 0.6); border: 1px solid #1e3a5f;
+         border-radius: 10px; padding: 0.75rem; margin: 0.35rem 0; backdrop-filter: blur(10px);">
+        <strong style="color: #f1f5f9; font-size: 0.95rem;">{title}</strong>
+        <p style="color: #cbd5e1; font-size: 0.8rem; margin: 0.35rem 0 0 0; line-height: 1.4;">
             {description}
         </p>
     </div>
@@ -386,8 +386,8 @@ def format_code_block(code: str, language: str = "python") -> str:
     """
     return f"""
     <div style="position: relative;">
-        <pre style="background: rgba(15, 23, 42, 0.8); border: 1px solid #334155;
-             border-radius: 12px; padding: 1rem; overflow-x: auto;">
+        <pre style="background: rgba(12, 18, 34, 0.8); border: 1px solid #1e3a5f;
+             border-radius: 10px; padding: 0.75rem; overflow-x: auto;">
             <code class="language-{language}">{code}</code>
         </pre>
         <button class="copy-button" onclick="navigator.clipboard.writeText('{code}')">
@@ -403,38 +403,38 @@ def render_welcome_cards():
         {
             "icon": "🧠",
             "title": "Intelligent Memory",
-            "description": "I remember our conversations and learn from past interactions to provide better answers over time.",
-            "color": "#6366f1"
+            "description": "Remembers conversations and learns from interactions for better answers.",
+            "color": "#06b6d4"
         },
         {
             "icon": "🔍",
             "title": "Smart Search",
-            "description": "Search through uploaded documents and web sources with advanced RAG technology for accurate answers.",
-            "color": "#8b5cf6"
+            "description": "Search documents and web with advanced RAG for accurate answers.",
+            "color": "#14b8a6"
         },
         {
             "icon": "🛠️",
             "title": "Multi-Tool Agent",
-            "description": "Access to 7+ specialized tools including web search, code execution, calculations, and file operations.",
+            "description": "7+ tools: web search, code execution, calculations, and more.",
             "color": "#10b981"
         },
         {
             "icon": "🌐",
             "title": "Web Browsing",
-            "description": "Autonomous web agent that can fetch and analyze content from websites in real-time.",
-            "color": "#f59e0b"
+            "description": "Fetch and analyze web content in real-time.",
+            "color": "#22d3ee"
         },
         {
             "icon": "🔄",
             "title": "Self-Reflection",
-            "description": "Evaluates its own decisions and learns from mistakes to continuously improve performance.",
-            "color": "#ec4899"
+            "description": "Evaluates decisions and learns from experience.",
+            "color": "#f472b6"
         },
         {
             "icon": "⚡",
             "title": "Fast & Reliable",
-            "description": "Optimized for speed with 3-5 second response times and async database operations.",
-            "color": "#06b6d4"
+            "description": "3-5 second response times with async operations.",
+            "color": "#f59e0b"
         }
     ]
 
@@ -448,8 +448,9 @@ def render_welcome_cards():
 
         with col:
             card_html = f"""
-            <div class="feature-card slide-up" style="animation-delay: {idx * 0.1}s;">
-                <span class="feature-card-icon float" style="animation-delay: {idx * 0.2}s;">{feature['icon']}</span>
+            <div class="feature-card slide-up" style="animation-delay: {idx * 0.08}s;">
+                <span class="feature-card-icon" style="background: linear-gradient(135deg, {feature['color']} 0%, {feature['color']}99 100%);
+                      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{feature['icon']}</span>
                 <div class="feature-card-title" style="color: {feature['color']};">
                     {feature['title']}
                 </div>
@@ -572,40 +573,44 @@ def render_simple_prompts():
 
 
 def render_qa_dashboard():
-    """Render a user-friendly QA tools dashboard."""
+    """Render a user-friendly QA tools dashboard with selected state."""
     st.markdown("### 🎯 QA Tools")
+    st.caption("Click a tool to get started")
 
-    # Primary actions row
+    # Which tool is currently selected
+    selected = st.session_state.get('qa_tool')
+
+    # Tool definitions: (key, label, icon, tool_name)
+    tools_left = [
+        ('generate', 'Generate Tests', '📝', 'rag_query'),
+        ('bdd', 'BDD Scenarios', '🥒', 'bdd_generator'),
+        ('bug', 'Bug Report', '🐛', 'bug_report'),
+    ]
+    tools_right = [
+        ('analyze', 'Analyze Coverage', '🔍', 'qa_analysis'),
+        ('data', 'Test Data', '🎲', 'test_data_generator'),
+        ('trace', 'Traceability', '📊', 'traceability_matrix'),
+    ]
+
+    actions = {}
     col1, col2 = st.columns(2)
 
-    actions = {
-        'generate': None,
-        'analyze': None,
-        'bdd': None,
-        'data': None,
-        'bug': None,
-        'trace': None
-    }
+    def _is_selected(tool_name):
+        return selected == tool_name
 
     with col1:
-        if st.button("📝 Generate Tests", use_container_width=True, type="primary", key="qa_dash_gen"):
-            actions['generate'] = True
-
-        if st.button("🥒 BDD Scenarios", use_container_width=True, key="qa_dash_bdd"):
-            actions['bdd'] = True
-
-        if st.button("🐛 Bug Report", use_container_width=True, key="qa_dash_bug"):
-            actions['bug'] = True
+        for key, label, icon, tool_name in tools_left:
+            btn_type = "primary" if _is_selected(tool_name) else "secondary"
+            display = f"{icon} {label} ✓" if _is_selected(tool_name) else f"{icon} {label}"
+            if st.button(display, use_container_width=True, type=btn_type, key=f"qa_dash_{key}"):
+                actions[key] = True
 
     with col2:
-        if st.button("🔍 Analyze Coverage", use_container_width=True, key="qa_dash_analyze"):
-            actions['analyze'] = True
-
-        if st.button("🎲 Test Data", use_container_width=True, key="qa_dash_data"):
-            actions['data'] = True
-
-        if st.button("📊 Traceability", use_container_width=True, key="qa_dash_trace"):
-            actions['trace'] = True
+        for key, label, icon, tool_name in tools_right:
+            btn_type = "primary" if _is_selected(tool_name) else "secondary"
+            display = f"{icon} {label} ✓" if _is_selected(tool_name) else f"{icon} {label}"
+            if st.button(display, use_container_width=True, type=btn_type, key=f"qa_dash_{key}"):
+                actions[key] = True
 
     # Return which action was clicked
     for action, clicked in actions.items():

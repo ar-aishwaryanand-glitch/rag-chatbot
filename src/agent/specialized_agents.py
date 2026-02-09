@@ -10,15 +10,15 @@ Available Agents:
 """
 
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
-import logging
 import re
 
 from src.agent.types import AgentCapability
+from src.logging_config import get_logger
 
 if TYPE_CHECKING:
     from src.rag_chain import RAGChain
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DevAgentInterface:

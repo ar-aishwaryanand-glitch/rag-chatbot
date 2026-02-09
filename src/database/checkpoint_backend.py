@@ -5,9 +5,13 @@ This module provides checkpoint storage for LangGraph agents,
 enabling state persistence and crash recovery.
 """
 
-import os
 from typing import Optional
 from contextlib import contextmanager
+
+from src.logging_config import get_logger
+from src.config import Config
+
+logger = get_logger(__name__)
 
 try:
     from langgraph.checkpoint.postgres import PostgresSaver
@@ -63,29 +67,11 @@ class CheckpointManager:
 
     def _get_connection_string(self) -> str:
         """Get PostgreSQL connection string from environment."""
-        # Try full connection string first
-        conn_str = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
-
-        if conn_str:
-            # Convert postgresql:// to postgres:// if needed (psycopg format)
-            if conn_str.startswith('postgresql://'):
-                conn_str = conn_str.replace('postgresql://', 'postgres://', 1)
-            return conn_str
-
-        # Build from individual components
-        user = os.getenv('POSTGRES_USER', 'postgres')
-        password = os.getenv('POSTGRES_PASSWORD', 'postgres')
-        host = os.getenv('POSTGRES_HOST', 'localhost')
-        port = os.getenv('POSTGRES_PORT', '5432')
-        database = os.getenv('POSTGRES_DB', 'rag_chatbot')
-
-        return f"postgres://{user}:{password}@{host}:{port}/{database}"
+        return Config.get_postgres_connection_string(use_psycopg_format=True)
 
     def _check_enabled(self) -> bool:
         """Check if checkpointing is enabled."""
-        use_postgres = os.getenv('USE_POSTGRES', 'false').lower() == 'true'
-        use_checkpoints = os.getenv('USE_CHECKPOINTS', 'true').lower() == 'true'
-        return use_postgres and use_checkpoints
+        return Config.USE_POSTGRES and Config.USE_CHECKPOINTS
 
     def _initialize_saver(self):
         """Initialize the PostgreSQL checkpoint saver."""
@@ -100,11 +86,11 @@ class CheckpointManager:
             # Store the context for cleanup
             self._saver_context = saver_context
 
-            print("✅ LangGraph checkpoint storage initialized")
+            logger.info("LangGraph checkpoint storage initialized")
 
         except Exception as e:
-            print(f"⚠️  Failed to initialize checkpoint storage: {e}")
-            print("📝 Checkpointing will be disabled")
+            logger.warning(f"Failed to initialize checkpoint storage: {e}")
+            logger.info("Checkpointing will be disabled")
             self.enabled = False
             self.checkpoint_saver = None
             self._saver_context = None
@@ -144,7 +130,7 @@ class CheckpointManager:
             finally:
                 conn.close()
         except Exception as e:
-            print(f"Error getting checkpoint connection: {e}")
+            logger.error(f"Error getting checkpoint connection: {e}")
             yield None
 
     def list_checkpoints(self, thread_id: str, limit: int = 10):
@@ -179,7 +165,7 @@ class CheckpointManager:
                 return cursor.fetchall()
 
         except Exception as e:
-            print(f"Error listing checkpoints: {e}")
+            logger.error(f"Error listing checkpoints: {e}")
             return []
 
     def get_checkpoint(self, thread_id: str, checkpoint_id: Optional[str] = None):
@@ -205,7 +191,7 @@ class CheckpointManager:
             return self.checkpoint_saver.get(config)
 
         except Exception as e:
-            print(f"Error getting checkpoint: {e}")
+            logger.error(f"Error getting checkpoint: {e}")
             return None
 
     def delete_thread_checkpoints(self, thread_id: str) -> bool:
@@ -234,7 +220,7 @@ class CheckpointManager:
                 return True
 
         except Exception as e:
-            print(f"Error deleting checkpoints: {e}")
+            logger.error(f"Error deleting checkpoints: {e}")
             return False
 
     def get_thread_history(self, thread_id: str):
@@ -269,7 +255,7 @@ class CheckpointManager:
             return history
 
         except Exception as e:
-            print(f"Error getting thread history: {e}")
+            logger.error(f"Error getting thread history: {e}")
             return []
 
     def close(self):
@@ -278,7 +264,7 @@ class CheckpointManager:
             try:
                 self._saver_context.__exit__(None, None, None)
             except Exception as e:
-                print(f"⚠️  Error closing checkpoint saver: {e}")
+                logger.warning(f"Error closing checkpoint saver: {e}")
         self.checkpoint_saver = None
         self._saver_context = None
 
@@ -300,7 +286,7 @@ def get_checkpoint_manager() -> CheckpointManager:
         try:
             _checkpoint_manager = CheckpointManager()
         except Exception as e:
-            print(f"⚠️  Could not initialize checkpoint manager: {e}")
+            logger.warning(f"Could not initialize checkpoint manager: {e}")
             # Create a disabled manager
             _checkpoint_manager = CheckpointManager.__new__(CheckpointManager)
             _checkpoint_manager.enabled = False

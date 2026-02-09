@@ -6,6 +6,9 @@ from langchain_core.documents import Document
 from functools import lru_cache
 
 from .config import Config
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -25,8 +28,7 @@ def _get_cached_embedding_model(provider: str, model_name: str):
                 encode_kwargs={'normalize_embeddings': True}
             )
         except ImportError as e:
-            print(f"⚠️  Warning: Could not load HuggingFace embeddings: {e}")
-            print("   Installing required packages...")
+            logger.warning(f"Could not load HuggingFace embeddings: {e}. Installing required packages...")
             import subprocess
             subprocess.run(["pip", "install", "sentence-transformers", "-q"])
             from langchain_huggingface import HuggingFaceEmbeddings
@@ -105,7 +107,7 @@ class EmbeddingManager:
         for i, chunk in enumerate(chunks):
             chunk.metadata["chunk_id"] = i
 
-        print(f"✂️  Split {len(documents)} documents into {len(chunks)} chunks")
+        logger.info(f"Split {len(documents)} documents into {len(chunks)} chunks")
         return chunks
 
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
@@ -119,7 +121,7 @@ class EmbeddingManager:
             List of embedding vectors
         """
         embeddings = self.embedding_model.embed_documents(texts)
-        print(f"🔢 Generated embeddings for {len(texts)} texts")
+        logger.info(f"Generated embeddings for {len(texts)} texts")
         return embeddings
 
     def generate_query_embedding(self, query: str) -> List[float]:

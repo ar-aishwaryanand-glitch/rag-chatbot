@@ -4,30 +4,37 @@ Core Policy Engine for agent behavior control.
 Evaluates policies, enforces rules, and tracks violations.
 """
 
-import os
-import re
-import yaml
-import json
+# Standard library
 import atexit
+import json
+import re
 import threading
-from pathlib import Path
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
 from collections import defaultdict
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+# Third-party
+import yaml
+
+# Local
+from src.config import Config
+from src.logging_config import get_logger
 from .policy_definitions import (
-    PolicyType,
-    PolicyAction,
-    PolicyRule,
-    ToolPolicy,
-    RateLimitPolicy,
+    AccessPolicy,
     ContentPolicy,
     CostPolicy,
-    AccessPolicy,
-    PolicyEvaluationContext,
+    PolicyAction,
     PolicyDecision,
-    PolicyViolationRecord
+    PolicyEvaluationContext,
+    PolicyRule,
+    PolicyType,
+    PolicyViolationRecord,
+    RateLimitPolicy,
+    ToolPolicy,
 )
+
+logger = get_logger(__name__)
 
 
 class PolicyViolation(Exception):
@@ -91,9 +98,9 @@ class PolicyEngine:
         # Load policies from config
         if self.enabled:
             self._load_policies(config_path)
-            print("✅ Policy Engine initialized")
+            logger.info("Policy Engine initialized")
         else:
-            print("📝 Policy Engine disabled")
+            logger.info("Policy Engine disabled")
 
     def _load_rate_limits(self) -> None:
         """Load persisted rate limit counters from disk."""
@@ -101,7 +108,7 @@ class PolicyEngine:
             return
 
         try:
-            with open(self._rate_limit_file, 'r') as f:
+            with open(self._rate_limit_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             # Restore request counts
@@ -127,10 +134,10 @@ class PolicyEngine:
                 for tool_name, count in tools.items():
                     self.tool_executions[session_id][tool_name] = count
 
-            print(f"📊 Loaded rate limit state from {self._rate_limit_file}")
+            logger.info(f"Loaded rate limit state from {self._rate_limit_file}")
 
         except Exception as e:
-            print(f"⚠️  Could not load rate limits: {e}")
+            logger.warning(f"Could not load rate limits: {e}")
 
     def _save_rate_limits(self) -> None:
         """Save rate limit counters to disk."""
@@ -173,13 +180,13 @@ class PolicyEngine:
 
                 # Atomic write (write to temp file, then rename)
                 temp_file = self._rate_limit_file.with_suffix('.tmp')
-                with open(temp_file, 'w') as f:
+                with open(temp_file, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2)
 
                 temp_file.replace(self._rate_limit_file)
 
             except Exception as e:
-                print(f"⚠️  Could not save rate limits: {e}")
+                logger.warning(f"Could not save rate limits: {e}")
 
     def _clean_old_tracking_data_all(self, now: datetime) -> None:
         """Clean old tracking data for all keys."""
@@ -189,7 +196,7 @@ class PolicyEngine:
 
     def _check_enabled(self) -> bool:
         """Check if policy engine is enabled."""
-        return os.getenv('USE_POLICY_ENGINE', 'true').lower() == 'true'
+        return Config.USE_POLICY_ENGINE
 
     def _load_policies(self, config_path: Optional[str] = None):
         """Load policies from configuration file."""
@@ -201,21 +208,21 @@ class PolicyEngine:
                 'policies.yaml'
             ]
             for path in default_paths:
-                if os.path.exists(path):
+                if Path(path).exists():
                     config_path = path
                     break
 
-        if config_path and os.path.exists(config_path):
+        if config_path and Path(config_path).exists():
             try:
-                with open(config_path, 'r') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f)
                     self._parse_policies(config)
-                print(f"📋 Loaded {len(self.policies)} policies from {config_path}")
+                logger.info(f"Loaded {len(self.policies)} policies from {config_path}")
             except Exception as e:
-                print(f"⚠️  Failed to load policies: {e}")
+                logger.warning(f"Failed to load policies: {e}")
                 self._load_default_policies()
         else:
-            print("📝 No policy config found, using defaults")
+            logger.info("No policy config found, using defaults")
             self._load_default_policies()
 
     def _parse_policies(self, config: Dict[str, Any]):
@@ -270,7 +277,7 @@ class PolicyEngine:
                 applies_to_tools=set(data.get('applies_to_tools', []))
             )
         except Exception as e:
-            print(f"⚠️  Failed to create tool policy: {e}")
+            logger.warning(f"Failed to create tool policy: {e}")
             return None
 
     def _create_rate_limit_policy(self, data: Dict[str, Any]) -> Optional[RateLimitPolicy]:
@@ -293,7 +300,7 @@ class PolicyEngine:
                 cooldown_period_seconds=data.get('cooldown_period_seconds')
             )
         except Exception as e:
-            print(f"⚠️  Failed to create rate limit policy: {e}")
+            logger.warning(f"Failed to create rate limit policy: {e}")
             return None
 
     def _create_content_policy(self, data: Dict[str, Any]) -> Optional[ContentPolicy]:
@@ -318,7 +325,7 @@ class PolicyEngine:
                 profanity_filter_enabled=data.get('profanity_filter_enabled', False)
             )
         except Exception as e:
-            print(f"⚠️  Failed to create content policy: {e}")
+            logger.warning(f"Failed to create content policy: {e}")
             return None
 
     def _create_cost_policy(self, data: Dict[str, Any]) -> Optional[CostPolicy]:
@@ -340,7 +347,7 @@ class PolicyEngine:
                 token_cost_per_1k=data.get('token_cost_per_1k', 0.001)
             )
         except Exception as e:
-            print(f"⚠️  Failed to create cost policy: {e}")
+            logger.warning(f"Failed to create cost policy: {e}")
             return None
 
     def _create_access_policy(self, data: Dict[str, Any]) -> Optional[AccessPolicy]:
@@ -360,7 +367,7 @@ class PolicyEngine:
                 required_permissions=set(data.get('required_permissions', []))
             )
         except Exception as e:
-            print(f"⚠️  Failed to create access policy: {e}")
+            logger.warning(f"Failed to create access policy: {e}")
             return None
 
     def _load_default_policies(self):
@@ -586,7 +593,7 @@ class PolicyEngine:
                             highest_action = PolicyAction.DENY
                 except Exception as e:
                     # Log but don't fail on bad patterns
-                    print(f"⚠️  Regex pattern error: {e}")
+                    logger.warning(f"Regex pattern error: {e}")
 
         allowed = highest_action != PolicyAction.DENY
         message = "Content violates policy" if not allowed else None
@@ -746,7 +753,7 @@ class PolicyEngine:
 
         if thread.is_alive():
             # Regex timed out - treat as no match but log warning
-            print(f"⚠️  Regex pattern timed out: {pattern[:50]}...")
+            logger.warning(f"Regex pattern timed out: {pattern[:50]}...")
             return False
 
         if result['error']:

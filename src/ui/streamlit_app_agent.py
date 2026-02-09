@@ -54,6 +54,9 @@ from src.ui.enhanced_components import (
 
 # Import Config
 from src.config import Config
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import agent components
 from src.system_init import initialize_system
@@ -211,25 +214,21 @@ def initialize_agent_system(enable_memory: bool = True, enable_reflection: bool 
 
 def get_or_create_agent():
     """Get or create the agent instance (lazy initialization on first use)."""
-    import sys
     if st.session_state.get('agent') is None:
-        print("[DEBUG] Agent is None, initializing...")
-        sys.stdout.flush()
+        logger.debug("Agent is None, initializing...")
         # Show status during first-time initialization
         status_placeholder = st.empty()
         status_placeholder.info("🚀 Initializing AI agent... (first time only, ~3-5 seconds)")
 
         try:
-            print("[DEBUG] Calling initialize_agent_system...")
-            sys.stdout.flush()
+            logger.debug("Calling initialize_agent_system...")
             agent = initialize_agent_system(
                 enable_memory=st.session_state.enable_memory,
                 enable_reflection=st.session_state.enable_reflection
             )
             st.session_state.agent = agent
             st.session_state.agent_initialized = True
-            print(f"[DEBUG] Agent initialized successfully: {type(agent)}")
-            sys.stdout.flush()
+            logger.debug(f"Agent initialized successfully: {type(agent)}")
 
             # Clear status message
             status_placeholder.empty()
@@ -237,15 +236,13 @@ def get_or_create_agent():
         except Exception as e:
             status_placeholder.empty()
             import traceback
-            print(f"[DEBUG] Agent init FAILED: {e}")
-            print(traceback.format_exc())
-            sys.stdout.flush()
+            logger.error(f"Agent init FAILED: {e}")
+            logger.error(traceback.format_exc())
             show_error(f"Failed to initialize agent: {str(e)}")
             st.error(f"Agent initialization failed:\n{traceback.format_exc()}")
             return None
     else:
-        print("[DEBUG] Agent already exists, reusing")
-        sys.stdout.flush()
+        logger.debug("Agent already exists, reusing")
 
     return st.session_state.agent
 
@@ -736,9 +733,9 @@ def handle_agent_query(prompt: str):
             try:
                 if agent.enable_memory and agent.memory_manager:
                     agent.memory_manager.save_episodic_memory()
-                    print(f"💾 Auto-saved episodic memory (query #{st.session_state.session_queries})")
+                    logger.info(f"Auto-saved episodic memory (query #{st.session_state.session_queries})")
             except Exception as e:
-                print(f"⚠️  Failed to auto-save memory: {e}")
+                logger.warning(f"Failed to auto-save memory: {e}")
 
         # Extract answer
         answer = result.get('final_answer', 'No answer generated')
@@ -1213,9 +1210,7 @@ def _process_uploaded_documents(uploaded_files):
     """Process and index uploaded documents."""
     with st.status("Processing documents...", expanded=True) as status:
         try:
-            from pathlib import Path
-
-            docs_dir = Path("data/documents")
+            docs_dir = Config.DOCUMENTS_DIR
             docs_dir.mkdir(parents=True, exist_ok=True)
 
             saved_files = []
@@ -1416,7 +1411,7 @@ def render_main_chat_agent():
                     st.toast(f"✅ Indexed {result['new']} new documents!", icon="📚")
         except Exception as e:
             # Auto-indexing is optional - don't block app startup
-            print(f"⚠️  Auto-indexing failed: {e}")
+            logger.warning(f"Auto-indexing failed: {e}")
         finally:
             st.session_state.startup_index_done = True
 
@@ -1533,19 +1528,16 @@ def render_main_chat_agent():
     # Chat input (outside tabs so it's always visible at the bottom)
     placeholder_text = "Ask a question or describe what you need help with..."
     if prompt := st.chat_input(placeholder_text, key='chat_input_agent'):
-        print(f"[DEBUG] Chat input received: {prompt}")
-        import sys; sys.stdout.flush()
+        logger.debug(f"Chat input received: {prompt}")
 
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
             try:
-                print(f"[DEBUG] Calling handle_agent_query...")
-                sys.stdout.flush()
+                logger.debug("Calling handle_agent_query...")
                 handle_agent_query(prompt)
-                print(f"[DEBUG] handle_agent_query completed")
-                sys.stdout.flush()
+                logger.debug("handle_agent_query completed")
 
                 if st.session_state.messages:
                     last_msg = st.session_state.messages[-1]
@@ -1561,9 +1553,8 @@ def render_main_chat_agent():
                     st.warning("No messages in session state.")
             except Exception as e:
                 import traceback
-                print(f"[DEBUG] ERROR: {e}")
-                print(traceback.format_exc())
-                sys.stdout.flush()
+                logger.error(f"ERROR: {e}")
+                logger.error(traceback.format_exc())
                 st.error(f"Error: {str(e)}\n\n{traceback.format_exc()}")
 
         st.rerun()
@@ -1578,7 +1569,7 @@ def cleanup_resources():
                 # Save current session to episodic memory
                 st.session_state.agent.end_session()
             except Exception as e:
-                print(f"⚠️  Error saving session on exit: {e}")
+                logger.warning(f"Error saving session on exit: {e}")
 
         # Close database connections
         try:
@@ -1589,9 +1580,9 @@ def cleanup_resources():
                 if session_mgr:
                     session_mgr.close()
         except Exception as e:
-            print(f"⚠️  Error closing database connections: {e}")
+            logger.warning(f"Error closing database connections: {e}")
     except Exception as e:
-        print(f"⚠️  Cleanup error: {e}")
+        logger.warning(f"Cleanup error: {e}")
 
 
 def main():

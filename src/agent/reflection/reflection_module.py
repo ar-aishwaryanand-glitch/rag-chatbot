@@ -9,6 +9,10 @@ from enum import Enum
 from pathlib import Path
 import json
 
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class ReflectionType(Enum):
     """Types of reflections."""
@@ -108,18 +112,17 @@ class ReflectionModule:
         """Load reflection history from disk."""
         if self.reflections_file.exists():
             try:
-                with open(self.reflections_file, 'r') as f:
+                with open(self.reflections_file, 'r', encoding='utf-8') as f:
                     for line in f:
                         if line.strip():
                             data = json.loads(line)
                             reflection = Reflection.from_dict(data)
                             self.reflections.append(reflection)
 
-                print(f"📝 Loaded {len(self.reflections)} reflections from history")
+                logger.info(f"Loaded {len(self.reflections)} reflections from history")
 
             except Exception as e:
-                print(f"⚠️  Warning: Could not load reflection history: {e}")
-                print("   Starting with fresh reflection history")
+                logger.warning(f"Could not load reflection history: {e}. Starting with fresh reflection history")
 
     def _start_flush_timer(self) -> None:
         """Start the background flush timer."""
@@ -152,7 +155,7 @@ class ReflectionModule:
 
         try:
             # Append all buffered reflections at once
-            with open(self.reflections_file, 'a') as f:
+            with open(self.reflections_file, 'a', encoding='utf-8') as f:
                 for reflection in self._write_buffer:
                     json.dump(reflection.to_dict(), f)
                     f.write('\n')
@@ -160,7 +163,7 @@ class ReflectionModule:
             self._write_buffer.clear()
 
         except Exception as e:
-            print(f"⚠️  Warning: Could not flush reflections: {e}")
+            logger.warning(f"Could not flush reflections: {e}")
 
     def flush(self) -> None:
         """Force flush any buffered reflections to disk."""
@@ -562,9 +565,9 @@ class ReflectionModule:
         if self.reflections_file.exists():
             try:
                 self.reflections_file.unlink()
-                print("🗑️  Cleared reflection history from disk")
+                logger.info("Cleared reflection history from disk")
             except Exception as e:
-                print(f"⚠️  Warning: Could not delete reflections file: {e}")
+                logger.warning(f"Could not delete reflections file: {e}")
 
     def stop(self) -> None:
         """Stop background timer and flush remaining data."""

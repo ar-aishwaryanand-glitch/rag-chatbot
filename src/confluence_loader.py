@@ -12,6 +12,9 @@ from requests.auth import HTTPBasicAuth
 from langchain_core.documents import Document
 
 from .config import Config
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -301,7 +304,7 @@ class ConfluenceLoader:
                 try:
                     pages.append(self.get_page_by_id(page_id))
                 except Exception as e:
-                    print(f"Warning: Could not fetch page {page_id}: {e}")
+                    logger.warning(f"Could not fetch page {page_id}: {e}")
         elif search_query:
             # Search for pages
             pages = self.search_pages(search_query, space_key=space_key, limit=limit)

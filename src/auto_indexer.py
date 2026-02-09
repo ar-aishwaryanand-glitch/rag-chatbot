@@ -11,6 +11,9 @@ from typing import Dict, List
 from datetime import datetime
 
 from .config import Config
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 from .embeddings import EmbeddingManager
 from .vector_store import VectorStoreManager
 
@@ -30,8 +33,8 @@ class AutoIndexer:
             documents_dir: Directory containing documents to index
             metadata_file: File to store indexing metadata
         """
-        self.documents_dir = documents_dir or Path("data/documents")
-        self.metadata_file = metadata_file or Path("data/.index_metadata.json")
+        self.documents_dir = documents_dir or Config.DOCUMENTS_DIR
+        self.metadata_file = metadata_file or Config.INDEX_METADATA_FILE
         self.metadata = self._load_metadata()
 
         # Initialize managers
@@ -42,17 +45,17 @@ class AutoIndexer:
         """Load indexing metadata from disk."""
         if self.metadata_file.exists():
             try:
-                with open(self.metadata_file, 'r') as f:
+                with open(self.metadata_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
-                print(f"⚠️  Could not load index metadata: {e}")
+                logger.warning(f"Could not load index metadata: {e}")
                 return {"files": {}, "last_index": None}
         return {"files": {}, "last_index": None}
 
     def _save_metadata(self):
         """Save indexing metadata to disk."""
         self.metadata_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.metadata_file, 'w') as f:
+        with open(self.metadata_file, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2)
 
     def _get_file_hash(self, file_path: Path) -> str:
@@ -143,14 +146,14 @@ class AutoIndexer:
             Dictionary with indexing results
         """
         if verbose:
-            print("\n🔍 Checking for document changes...")
+            logger.info("Checking for document changes...")
 
         # Detect changes
         changes = self.detect_changes()
 
         if not force_rebuild and not any(changes.values()):
             if verbose:
-                print("✅ All documents are up to date!")
+                logger.info("All documents are up to date!")
             return {
                 "status": "up_to_date",
                 "new": 0,
@@ -169,11 +172,8 @@ class AutoIndexer:
 
         if needs_rebuild:
             if verbose:
-                print("\n🔄 Full rebuild needed:")
-                print(f"   - New files: {len(changes['new'])}")
-                print(f"   - Modified files: {len(changes['modified'])}")
-                print(f"   - Deleted files: {len(changes['deleted'])}")
-                print("\n📚 Re-indexing all documents...")
+                logger.info(f"Full rebuild needed: new={len(changes['new'])}, modified={len(changes['modified'])}, deleted={len(changes['deleted'])}")
+                logger.info("Re-indexing all documents...")
 
             # Delete old vector store
             if Config.VECTOR_STORE_PATH.exists():
@@ -191,7 +191,7 @@ class AutoIndexer:
 
             if not all_chunks:
                 if verbose:
-                    print("❌ No documents to index!")
+                    logger.warning("No documents to index!")
                 return {
                     "status": "error",
                     "message": "No documents found"
@@ -199,7 +199,7 @@ class AutoIndexer:
 
             # Create vector store
             if verbose:
-                print(f"\n📦 Creating vector store with {len(all_chunks)} chunks...")
+                logger.info(f"Creating vector store with {len(all_chunks)} chunks...")
             self.vector_store_manager.create_vector_store(chunks=all_chunks, batch_size=5, delay=1.0)
             self.vector_store_manager.save_vector_store()
 
@@ -211,7 +211,7 @@ class AutoIndexer:
         else:
             # Only new files, can add incrementally
             if verbose:
-                print(f"\n➕ Adding {len(changes['new'])} new documents...")
+                logger.info(f"Adding {len(changes['new'])} new documents...")
 
             new_chunks = self._process_documents(changes["new"], verbose)
 
@@ -229,7 +229,7 @@ class AutoIndexer:
         self._save_metadata()
 
         if verbose:
-            print("\n✅ Indexing complete!")
+            logger.info("Indexing complete!")
 
         return {
             "status": "success",
@@ -245,7 +245,7 @@ class AutoIndexer:
 
         for i, file_path in enumerate(file_paths, 1):
             if verbose:
-                print(f"\n   [{i}/{len(file_paths)}] Processing: {file_path.name}")
+                logger.info(f"[{i}/{len(file_paths)}] Processing: {file_path.name}")
 
             try:
                 suffix = file_path.suffix.lower()
@@ -258,17 +258,17 @@ class AutoIndexer:
                     for page in reader.pages:
                         text_content += page.extract_text() + "\n"
                     if verbose:
-                        print(f"      ✓ Extracted {len(reader.pages)} pages")
+                        logger.info(f"Extracted {len(reader.pages)} pages from {file_path.name}")
 
                 elif suffix in ['.txt', '.md']:
                     with open(file_path, 'r', encoding='utf-8') as f:
                         text_content = f.read()
                     if verbose:
-                        print(f"      ✓ Read {len(text_content)} characters")
+                        logger.info(f"Read {len(text_content)} characters from {file_path.name}")
 
                 else:
                     if verbose:
-                        print(f"      ⚠️  Unsupported file type: {suffix}")
+                        logger.warning(f"Unsupported file type: {suffix}")
                     continue
 
                 # Chunk the document
@@ -282,13 +282,13 @@ class AutoIndexer:
                 }])
 
                 if verbose:
-                    print(f"      ✓ Created {len(chunks)} chunks")
+                    logger.info(f"Created {len(chunks)} chunks from {file_path.name}")
 
                 all_chunks.extend(chunks)
 
             except Exception as e:
                 if verbose:
-                    print(f"      ❌ Error: {str(e)}")
+                    logger.error(f"Error processing {file_path.name}: {str(e)}")
                 continue
 
         return all_chunks

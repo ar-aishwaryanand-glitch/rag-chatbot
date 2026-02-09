@@ -1,14 +1,17 @@
 """FAISS vector store management for RAG Agent POC."""
 
-import time
+# Standard library
 import hashlib
-import os
 import random
+import time
 from pathlib import Path
 from typing import List, Optional
+
+# Third-party
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
+# Local
 from .config import Config
 from .embeddings import EmbeddingManager
 from .logging_config import get_logger
@@ -30,7 +33,7 @@ class VectorStoreManager:
         self.vector_store: Optional[FAISS] = None
         self.store_path = Config.VECTOR_STORE_PATH
         self.verify_integrity = verify_integrity
-        self._checksum_file = Path(str(self.store_path) + ".sha256")
+        self._checksum_file = self.store_path.with_name(self.store_path.name + ".sha256")
 
         # Automatically load vector store from disk if it exists
         if self.store_path.exists():
@@ -74,7 +77,7 @@ class VectorStoreManager:
             return True
 
         try:
-            with open(self._checksum_file, 'r') as f:
+            with open(self._checksum_file, 'r', encoding='utf-8') as f:
                 stored_checksum = f.read().strip()
 
             current_checksum = self._compute_checksum()
@@ -98,7 +101,7 @@ class VectorStoreManager:
         try:
             checksum = self._compute_checksum()
             if checksum:
-                with open(self._checksum_file, 'w') as f:
+                with open(self._checksum_file, 'w', encoding='utf-8') as f:
                     f.write(checksum)
                 logger.info("Saved integrity checksum")
         except Exception as e:

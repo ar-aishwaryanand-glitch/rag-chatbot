@@ -867,5 +867,4 @@ LIMIT 20;
 
 - [Agent System](AGENT_SYSTEM.md) - Checkpoint integration
 - [Memory System](MEMORY_SYSTEM.md) - Memory persistence
-- [Configuration](CONFIGURATION.md) - Database settings
-- [Conversation Memory Fix](../CONVERSATION_MEMORY_FIX.md) - Implementation details
+- [Configuration](../CONFIGURATION.md) - Database settings

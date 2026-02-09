@@ -762,7 +762,7 @@ obs = get_observability()
 # - avg_similarity_score: Average relevance score
 
 # View metrics (if observability enabled)
-# See docs/OBSERVABILITY.md
+# See docs/operations/OBSERVABILITY_GUIDE.md
 ```
 
 ## Advanced Topics
@@ -822,6 +822,6 @@ image_embeddings = multi_modal_embedding_model.embed_images(images)
 ## Related Documentation
 
 - [Agent System](AGENT_SYSTEM.md) - How RAG integrates with agent
-- [Tools Reference](TOOLS_REFERENCE.md) - RAG Tool documentation
-- [Configuration](CONFIGURATION.md) - All RAG settings
+- [Tools Reference](../features/TOOLS_REFERENCE.md) - RAG Tool documentation
+- [Configuration](../CONFIGURATION.md) - All RAG settings
 - [Database Persistence](DATABASE_PERSISTENCE.md) - Session storage

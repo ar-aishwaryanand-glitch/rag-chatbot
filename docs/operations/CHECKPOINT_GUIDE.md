@@ -18,7 +18,7 @@ This guide explains how to use PostgreSQL-backed checkpoint storage for crash re
 
 ## 📋 Prerequisites
 
-1. **PostgreSQL Setup** - See [POSTGRES_SETUP.md](POSTGRES_SETUP.md) for installation
+1. **PostgreSQL Setup** - See [POSTGRES_SETUP.md](../setup/POSTGRES_SETUP.md) for installation
 2. **Python Packages** - Checkpoint dependencies installed
 3. **Database Initialized** - Run `python init_database.py`
 

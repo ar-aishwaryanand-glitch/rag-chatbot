@@ -24,10 +24,12 @@ from enum import Enum
 import json
 import threading
 import time
-import logging
 import uuid
 
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+from src.config import Config
+
+logger = get_logger(__name__)
 
 
 class ScheduleType(Enum):
@@ -88,7 +90,7 @@ class TaskScheduler:
             on_task_complete: Callback when task completes
         """
         self.manager_agent = manager_agent
-        self.storage_path = storage_path or Path("data/scheduled_tasks")
+        self.storage_path = storage_path or Config.SCHEDULED_TASKS_PATH
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         self.tasks_file = self.storage_path / "scheduled_tasks.json"
@@ -106,7 +108,7 @@ class TaskScheduler:
         """Load scheduled tasks from file."""
         if self.tasks_file.exists():
             try:
-                with open(self.tasks_file, 'r') as f:
+                with open(self.tasks_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for task_id, task_data in data.items():
                         self._tasks[task_id] = ScheduledTask.from_dict(task_data)
@@ -121,7 +123,7 @@ class TaskScheduler:
                 task_id: task.to_dict()
                 for task_id, task in self._tasks.items()
             }
-            with open(self.tasks_file, 'w') as f:
+            with open(self.tasks_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving tasks: {e}")
@@ -129,7 +131,7 @@ class TaskScheduler:
     def _log_execution(self, task: ScheduledTask, result: Dict):
         """Log task execution to history."""
         try:
-            with open(self.history_file, 'a') as f:
+            with open(self.history_file, 'a', encoding='utf-8') as f:
                 log_entry = {
                     "task_id": task.id,
                     "goal": task.goal,
@@ -413,7 +415,7 @@ class TaskScheduler:
 
         if self.history_file.exists():
             try:
-                with open(self.history_file, 'r') as f:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
                     for line in lines[-limit:]:
                         if line.strip():

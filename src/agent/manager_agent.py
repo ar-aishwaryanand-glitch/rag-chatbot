@@ -16,19 +16,16 @@ Usage:
     result = manager.execute("Create comprehensive tests for user authentication")
 """
 
-from typing import Dict, List, Optional, Any, Callable
+# Standard library
 import json
-import logging
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
-from src.agent.types import (
-    AgentType,
-    AgentCapability,
-    TaskAssignment,
-    ExecutionPlan
-)
+# Local
+from src.agent.types import AgentCapability, AgentType, ExecutionPlan, TaskAssignment
+from src.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class QAAgentInterface:

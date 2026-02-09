@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 
 from .task_queue import TaskQueue, get_task_queue
 from .task_models import Task
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class TaskScheduler:
@@ -66,7 +69,7 @@ class TaskScheduler:
             {task.task_id: score}
         )
 
-        print(f"⏰ Task {task.task_id} scheduled for {execute_at}")
+        logger.info(f"Task {task.task_id} scheduled for {execute_at}")
 
         return task.task_id
 
@@ -121,7 +124,7 @@ class TaskScheduler:
             self.task_queue.redis_client.zrem(self.scheduled_key, task_id)
 
         if submitted > 0:
-            print(f"📤 Submitted {submitted} scheduled task(s)")
+            logger.info(f"Submitted {submitted} scheduled task(s)")
 
         return submitted
 
@@ -144,7 +147,7 @@ class TaskScheduler:
         task_key = self.task_queue._get_task_key(task_id)
         self.task_queue.redis_client.delete(task_key)
 
-        print(f"🚫 Cancelled scheduled task: {task_id}")
+        logger.info(f"Cancelled scheduled task: {task_id}")
 
     def run_scheduler_loop(self, check_interval: int = 10):
         """
@@ -153,7 +156,7 @@ class TaskScheduler:
         Args:
             check_interval: How often to check for due tasks (seconds)
         """
-        print("⏰ Task scheduler starting...")
+        logger.info("Task scheduler starting...")
 
         try:
             while True:
@@ -161,4 +164,4 @@ class TaskScheduler:
                 time.sleep(check_interval)
 
         except KeyboardInterrupt:
-            print("\n⏰ Task scheduler stopped")
+            logger.info("Task scheduler stopped")

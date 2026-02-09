@@ -9,10 +9,14 @@ Features:
 - Pub/sub for real-time updates
 """
 
-import os
 import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from src.logging_config import get_logger
+from src.config import Config
+
+logger = get_logger(__name__)
 
 try:
     import redis
@@ -72,20 +76,20 @@ class TaskQueue:
 
     def _check_enabled(self) -> bool:
         """Check if Redis queue is enabled."""
-        return os.getenv('USE_REDIS_QUEUE', 'false').lower() == 'true'
+        return Config.USE_REDIS_QUEUE
 
     def _get_redis_url(self) -> str:
         """Get Redis connection URL from environment."""
-        redis_url = os.getenv('REDIS_URL')
+        params = Config.get_redis_connection_params()
 
-        if redis_url:
-            return redis_url
+        if "url" in params:
+            return params["url"]
 
         # Build from components
-        host = os.getenv('REDIS_HOST', 'localhost')
-        port = os.getenv('REDIS_PORT', '6379')
-        db = os.getenv('REDIS_DB', '0')
-        password = os.getenv('REDIS_PASSWORD', '')
+        host = params["host"]
+        port = params["port"]
+        db = params["db"]
+        password = params.get("password")
 
         if password:
             return f"redis://:{password}@{host}:{port}/{db}"
@@ -106,11 +110,11 @@ class TaskQueue:
             # Initialize pub/sub
             self.pubsub = self.redis_client.pubsub()
 
-            print("✅ Redis task queue initialized")
+            logger.info("Redis task queue initialized")
 
         except Exception as e:
-            print(f"⚠️  Failed to connect to Redis: {e}")
-            print("📝 Task queue will be disabled")
+            logger.warning(f"Failed to connect to Redis: {e}")
+            logger.info("Task queue will be disabled")
             self.enabled = False
             self.redis_client = None
 
@@ -166,7 +170,7 @@ class TaskQueue:
             'priority': task.priority.name
         })
 
-        print(f"📤 Task submitted: {task.task_id} ({task.priority.name} priority)")
+        logger.info(f"Task submitted: {task.task_id} ({task.priority.name} priority)")
 
         return task.task_id
 
@@ -332,7 +336,7 @@ class TaskQueue:
             # Update status
             self.update_task_status(task_id, TaskStatus.CANCELLED)
 
-            print(f"🚫 Task cancelled: {task_id}")
+            logger.info(f"Task cancelled: {task_id}")
 
     def retry_task(self, task_id: str):
         """Retry a failed task."""
@@ -360,9 +364,9 @@ class TaskQueue:
                 json.dumps(task.to_dict())
             )
 
-            print(f"🔄 Task retry {task.retry_count}/{task.max_retries}: {task_id}")
+            logger.info(f"Task retry {task.retry_count}/{task.max_retries}: {task_id}")
         else:
-            print(f"❌ Max retries reached for task: {task_id}")
+            logger.warning(f"Max retries reached for task: {task_id}")
             self.update_task_status(task_id, TaskStatus.FAILED)
 
     def get_queue_stats(self) -> QueueStats:
@@ -446,7 +450,7 @@ class TaskQueue:
             }
             self.redis_client.publish(channel, json.dumps(message))
         except Exception as e:
-            print(f"⚠️  Failed to publish event: {e}")
+            logger.warning(f"Failed to publish event: {e}")
 
     def subscribe_to_events(self, callback):
         """Subscribe to queue events."""
@@ -499,7 +503,7 @@ class TaskQueue:
             heartbeat_key = f"{self.queue_prefix}:worker:{worker_id}:heartbeat"
             if not self.redis_client.exists(heartbeat_key):
                 self.unregister_worker(worker_id)
-                print(f"🧹 Removed stale worker: {worker_id}")
+                logger.info(f"Removed stale worker: {worker_id}")
 
     def clear_queue(self):
         """Clear all tasks from queue (use with caution)."""
@@ -516,7 +520,7 @@ class TaskQueue:
             status_key = self._get_status_key(status)
             self.redis_client.delete(status_key)
 
-        print("🧹 Queue cleared")
+        logger.info("Queue cleared")
 
     def is_available(self) -> bool:
         """Check if task queue is available."""
@@ -542,7 +546,7 @@ def get_task_queue() -> TaskQueue:
         try:
             _task_queue = TaskQueue()
         except Exception as e:
-            print(f"⚠️  Could not initialize task queue: {e}")
+            logger.warning(f"Could not initialize task queue: {e}")
             # Create disabled queue
             _task_queue = TaskQueue.__new__(TaskQueue)
             _task_queue.enabled = False

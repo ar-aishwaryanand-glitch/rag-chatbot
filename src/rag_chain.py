@@ -1,12 +1,16 @@
 """RAG chain implementation for question answering."""
 
+# Standard library
 import ast
 import re
-from typing import List, Dict, Union, TYPE_CHECKING, Tuple, Optional, Any
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.documents import Document
 import time
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
+# Third-party
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+
+# Local
 from .config import Config
 from .observability import get_observability
 from .logging_config import get_logger

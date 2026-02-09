@@ -31,8 +31,12 @@ from opentelemetry.trace import Status, StatusCode
 # Import config
 try:
     from .config import Config
+    from .logging_config import get_logger
 except ImportError:
     from config import Config
+    from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ObservabilityManager:
@@ -68,9 +72,9 @@ class ObservabilityManager:
         # Setup metrics
         self._setup_metrics(resource)
 
-        print(f"🔭 OpenTelemetry initialized: {Config.OTEL_SERVICE_NAME}")
-        print(f"   Environment: {Config.OTEL_ENVIRONMENT}")
-        print(f"   Exporter: {Config.OTEL_EXPORTER_TYPE}")
+        logger.info(f"OpenTelemetry initialized: {Config.OTEL_SERVICE_NAME}")
+        logger.info(f"Environment: {Config.OTEL_ENVIRONMENT}")
+        logger.info(f"Exporter: {Config.OTEL_EXPORTER_TYPE}")
 
     def _setup_tracing(self, resource: Resource):
         """Configure tracing with appropriate exporter."""
@@ -96,8 +100,7 @@ class ObservabilityManager:
                 tracer_provider.add_span_processor(span_processor)
 
             except ImportError:
-                print("⚠️  Warning: opentelemetry-exporter-otlp not installed")
-                print("   Install with: pip install opentelemetry-exporter-otlp")
+                logger.warning("opentelemetry-exporter-otlp not installed. Install with: pip install opentelemetry-exporter-otlp")
                 # Fallback to console
                 span_processor = BatchSpanProcessor(ConsoleSpanExporter())
                 tracer_provider.add_span_processor(span_processor)
@@ -115,8 +118,7 @@ class ObservabilityManager:
                 tracer_provider.add_span_processor(span_processor)
 
             except ImportError:
-                print("⚠️  Warning: opentelemetry-exporter-jaeger not installed")
-                print("   Install with: pip install opentelemetry-exporter-jaeger")
+                logger.warning("opentelemetry-exporter-jaeger not installed. Install with: pip install opentelemetry-exporter-jaeger")
                 # Fallback to console
                 span_processor = BatchSpanProcessor(ConsoleSpanExporter())
                 tracer_provider.add_span_processor(span_processor)
@@ -148,7 +150,7 @@ class ObservabilityManager:
                     export_interval_millis=60000
                 )
             except ImportError:
-                print("⚠️  Warning: Using console metrics exporter (OTLP not available)")
+                logger.warning("Using console metrics exporter (OTLP not available)")
                 metric_reader = PeriodicExportingMetricReader(
                     ConsoleMetricExporter(),
                     export_interval_millis=60000

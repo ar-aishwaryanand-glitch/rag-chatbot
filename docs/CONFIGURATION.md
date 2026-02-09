@@ -667,9 +667,9 @@ ENABLE_OBSERVABILITY=true      # Monitor performance
 
 ## Related Documentation
 
-- [Agent System](AGENT_SYSTEM.md) - Agent configuration details
-- [Memory System](MEMORY_SYSTEM.md) - Memory settings
-- [RAG Core](RAG_CORE.md) - Embedding and vector store config
-- [Database Persistence](DATABASE_PERSISTENCE.md) - Database settings
-- [Tools Reference](TOOLS_REFERENCE.md) - Tool configuration
-- [Codebase Guide](../CODEBASE_GUIDE.md) - System overview
+- [Agent System](architecture/AGENT_SYSTEM.md) - Agent configuration details
+- [Memory System](architecture/MEMORY_SYSTEM.md) - Memory settings
+- [RAG Core](architecture/RAG_CORE.md) - Embedding and vector store config
+- [Database Persistence](architecture/DATABASE_PERSISTENCE.md) - Database settings
+- [Tools Reference](features/TOOLS_REFERENCE.md) - Tool configuration
+- [Codebase Guide](architecture/CODEBASE_GUIDE.md) - System overview

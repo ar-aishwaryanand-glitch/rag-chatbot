@@ -214,4 +214,4 @@ pip install -r requirements.txt
 
 - **Issues**: Check existing documentation in `docs/` folder
 - **Configuration**: See `docs/CONFIGURATION.md`
-- **Codebase**: See `CODEBASE_GUIDE.md`
+- **Codebase**: See `docs/CODEBASE_GUIDE.md`

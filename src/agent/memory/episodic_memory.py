@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import json
 
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class Episode:
@@ -287,7 +291,7 @@ class EpisodicMemory:
         """Save a single episode to disk."""
         episode_file = self.storage_path / f"{episode.session_id}.json"
 
-        with open(episode_file, 'w') as f:
+        with open(episode_file, 'w', encoding='utf-8') as f:
             json.dump(episode.to_dict(), f, indent=2)
 
     def _load_episodes(self) -> None:
@@ -297,12 +301,12 @@ class EpisodicMemory:
 
         for episode_file in self.storage_path.glob("*.json"):
             try:
-                with open(episode_file, 'r') as f:
+                with open(episode_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     episode = Episode.from_dict(data)
                     self.episodes[episode.session_id] = episode
             except Exception as e:
-                print(f"Warning: Failed to load episode from {episode_file}: {e}")
+                logger.warning(f"Failed to load episode from {episode_file}: {e}")
 
     def save_all(self) -> None:
         """Save all episodes to disk."""

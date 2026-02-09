@@ -12,13 +12,15 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
-import logging
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+from src.config import Config
+
+logger = get_logger(__name__)
 
 # Default storage path
-DEFAULT_MEMORY_PATH = Path("data/manager_memory")
+DEFAULT_MEMORY_PATH = Config.MANAGER_MEMORY_PATH
 
 
 @dataclass
@@ -101,7 +103,7 @@ class ManagerMemory:
         """Load execution history from file."""
         if self.history_file.exists():
             try:
-                with open(self.history_file, 'r') as f:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
                     for line in f:
                         if line.strip():
                             data = json.loads(line)
@@ -114,7 +116,7 @@ class ManagerMemory:
         """Load performance metrics from file."""
         if self.performance_file.exists():
             try:
-                with open(self.performance_file, 'r') as f:
+                with open(self.performance_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for name, metrics in data.items():
                         self._performance[name] = AgentPerformance(**metrics)
@@ -125,7 +127,7 @@ class ManagerMemory:
         """Load learned patterns from file."""
         if self.patterns_file.exists():
             try:
-                with open(self.patterns_file, 'r') as f:
+                with open(self.patterns_file, 'r', encoding='utf-8') as f:
                     self._patterns = json.load(f)
             except Exception as e:
                 logger.error(f"Error loading patterns: {e}")
@@ -133,7 +135,7 @@ class ManagerMemory:
     def _save_history_record(self, record: ExecutionRecord):
         """Append a single record to history file."""
         try:
-            with open(self.history_file, 'a') as f:
+            with open(self.history_file, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(record.to_dict()) + '\n')
         except Exception as e:
             logger.error(f"Error saving history record: {e}")
@@ -145,7 +147,7 @@ class ManagerMemory:
                 name: asdict(perf)
                 for name, perf in self._performance.items()
             }
-            with open(self.performance_file, 'w') as f:
+            with open(self.performance_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving performance: {e}")
@@ -153,7 +155,7 @@ class ManagerMemory:
     def _save_patterns(self):
         """Save learned patterns to file."""
         try:
-            with open(self.patterns_file, 'w') as f:
+            with open(self.patterns_file, 'w', encoding='utf-8') as f:
                 json.dump(self._patterns, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving patterns: {e}")
@@ -555,7 +557,7 @@ class ManagerMemory:
     def _rewrite_history(self):
         """Rewrite entire history file (for updates)."""
         try:
-            with open(self.history_file, 'w') as f:
+            with open(self.history_file, 'w', encoding='utf-8') as f:
                 for record in self._history:
                     f.write(json.dumps(record.to_dict()) + '\n')
         except Exception as e:

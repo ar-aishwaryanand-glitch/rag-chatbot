@@ -9,9 +9,10 @@ from typing import List, Tuple, Dict
 import streamlit as st
 import re
 
+from src.config import Config
+
 # Upload directory (separate from manual documents)
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-UPLOAD_DIR = PROJECT_ROOT / "data" / "uploaded"
+UPLOAD_DIR = Config.DATA_DIR / "uploaded"
 
 
 def ensure_upload_dir():
@@ -276,7 +277,7 @@ def load_documents_for_ui():
 
     # Load persistent documents
     try:
-        persistent_docs = load_all_documents(directory="data/documents")
+        persistent_docs = load_all_documents(directory=str(Config.DOCUMENTS_DIR))
         docs.extend(persistent_docs)
     except Exception as e:
         st.warning(f"Could not load persistent documents: {e}")

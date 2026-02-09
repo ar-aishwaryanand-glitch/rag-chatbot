@@ -431,8 +431,7 @@ pip install -r requirements.txt
 - [.env](.env) - Environment variables (NEWSAPI_KEY)
 
 ### Documentation
-- [BACKEND_STATUS.md](BACKEND_STATUS.md) - Backend services status
-- [POLICY_ENGINE_GUIDE.md](POLICY_ENGINE_GUIDE.md) - Policy engine documentation
+- [POLICY_ENGINE_GUIDE.md](../operations/POLICY_ENGINE_GUIDE.md) - Policy engine documentation
 
 ---
 

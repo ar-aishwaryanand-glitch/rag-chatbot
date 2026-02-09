@@ -8,7 +8,6 @@ This module provides database operations for:
 - Session restoration
 """
 
-import os
 from typing import Optional, List
 from datetime import datetime
 import json
@@ -28,6 +27,7 @@ except ImportError:
     DatabaseError = Exception
 
 from .models import Session, Message, EpisodicMemory, SessionStats
+from src.config import Config
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -57,20 +57,7 @@ class PostgresBackend:
 
     def _get_connection_string(self) -> str:
         """Get connection string from environment variables."""
-        # Try full connection string first
-        conn_str = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
-
-        if conn_str:
-            return conn_str
-
-        # Build from individual components
-        user = os.getenv('POSTGRES_USER', 'postgres')
-        password = os.getenv('POSTGRES_PASSWORD', 'postgres')
-        host = os.getenv('POSTGRES_HOST', 'localhost')
-        port = os.getenv('POSTGRES_PORT', '5432')
-        database = os.getenv('POSTGRES_DB', 'rag_chatbot')
-
-        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        return Config.get_postgres_connection_string(use_psycopg_format=False)
 
     def _initialize_pool(self):
         """Initialize connection pool with optimized settings."""

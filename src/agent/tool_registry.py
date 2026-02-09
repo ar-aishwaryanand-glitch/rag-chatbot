@@ -2,6 +2,9 @@
 
 from typing import Dict, List, Optional
 from .tools.base_tool import BaseTool
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ToolRegistry:
@@ -29,7 +32,7 @@ class ToolRegistry:
             raise ValueError(f"Tool with name '{tool.name}' already registered")
 
         self.tools[tool.name] = tool
-        print(f"✓ Registered tool: {tool.name}")
+        logger.info(f"Registered tool: {tool.name}")
 
     def get_tool(self, name: str) -> Optional[BaseTool]:
         """

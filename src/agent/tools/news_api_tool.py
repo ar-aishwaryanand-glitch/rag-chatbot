@@ -6,7 +6,6 @@ Integrates with:
 - Google News RSS feeds as fallback
 """
 
-import os
 import time
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -15,6 +14,10 @@ from urllib.parse import quote_plus
 
 from .base_tool import BaseTool, ToolResult
 from .relevance_evaluator import RelevanceEvaluator
+from src.logging_config import get_logger
+from src.config import Config
+
+logger = get_logger(__name__)
 
 # Optional imports
 try:
@@ -96,8 +99,8 @@ class NewsApiTool(BaseTool):
         """
         super().__init__()
 
-        # Get API key from env or parameter
-        self.api_key = api_key or os.getenv('NEWSAPI_KEY')
+        # Get API key from Config or parameter
+        self.api_key = api_key or Config.NEWSAPI_KEY
 
         # Initialize NewsAPI client if available
         self.newsapi_client = None
@@ -105,18 +108,18 @@ class NewsApiTool(BaseTool):
             try:
                 self.newsapi_client = NewsApiClient(api_key=self.api_key)
             except Exception as e:
-                print(f"⚠️ Failed to initialize NewsAPI client: {e}")
+                logger.warning(f"Failed to initialize NewsAPI client: {e}")
 
         # Initialize LLM client for relevance filtering
         self.llm_client = llm_client
         if not self.llm_client and ANTHROPIC_AVAILABLE and filter_irrelevant:
-            # Try to initialize from environment variable
-            anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+            # Try to initialize from Config
+            anthropic_key = Config.ANTHROPIC_API_KEY
             if anthropic_key:
                 try:
                     self.llm_client = Anthropic(api_key=anthropic_key)
                 except Exception as e:
-                    print(f"⚠️ Failed to initialize Anthropic client: {e}")
+                    logger.warning(f"Failed to initialize Anthropic client: {e}")
 
         # Initialize relevance evaluator
         self.filter_irrelevant = filter_irrelevant
@@ -222,7 +225,7 @@ class NewsApiTool(BaseTool):
             # Apply relevance filtering if enabled and query is provided
             original_count = len(articles)
             if self.filter_irrelevant and query:
-                print(f"🔍 Filtering {original_count} articles for relevance to: '{query}'")
+                logger.info(f"Filtering {original_count} articles for relevance to: '{query}'")
 
                 # Convert NewsArticle objects to dicts for filtering
                 article_dicts = [
@@ -260,7 +263,7 @@ class NewsApiTool(BaseTool):
                 ]
 
                 filtered_count = len(articles)
-                print(f"✓ Kept {filtered_count}/{original_count} relevant articles")
+                logger.info(f"Kept {filtered_count}/{original_count} relevant articles")
 
                 if not articles:
                     return ToolResult(
@@ -343,7 +346,7 @@ class NewsApiTool(BaseTool):
                     articles.append(article)
 
         except Exception as e:
-            print(f"⚠️ NewsAPI error: {e}")
+            logger.warning(f"NewsAPI error: {e}")
 
         return articles
 
@@ -373,7 +376,7 @@ class NewsApiTool(BaseTool):
                 articles.append(article)
 
         except Exception as e:
-            print(f"⚠️ Google News RSS error: {e}")
+            logger.warning(f"Google News RSS error: {e}")
 
         return articles
 

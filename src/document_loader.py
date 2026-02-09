@@ -2,6 +2,9 @@
 
 from pathlib import Path
 from typing import List, Dict
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 def load_docx_file(file_path: Path) -> str:
     """
@@ -62,7 +65,7 @@ def load_text_files(directory: str = None) -> List[Dict[str, str]]:
         directory = Path(directory)
 
     if not directory.exists():
-        print(f"⚠️  Warning: Directory {directory} does not exist")
+        logger.warning(f"Directory {directory} does not exist")
         return []
 
     documents = []
@@ -76,10 +79,10 @@ def load_text_files(directory: str = None) -> List[Dict[str, str]]:
     )
 
     if not all_files:
-        print(f"⚠️  Warning: No supported files found in {directory}")
+        logger.warning(f"No supported files found in {directory}")
         return []
 
-    print(f"📂 Found {len(all_files)} document(s)")
+    logger.info(f"Found {len(all_files)} document(s)")
 
     for file_path in all_files:
         try:
@@ -107,10 +110,10 @@ def load_text_files(directory: str = None) -> List[Dict[str, str]]:
                 }
             })
 
-            print(f"  ✓ Loaded: {file_path.name}")
+            logger.info(f"Loaded: {file_path.name}")
 
         except Exception as e:
-            print(f"  ✗ Error loading {file_path.name}: {e}")
+            logger.error(f"Error loading {file_path.name}: {e}")
 
     return documents
 
@@ -130,7 +133,7 @@ def load_pdfs(directory: str = None) -> List[Dict[str, str]]:
     try:
         from pypdf import PdfReader
     except ImportError:
-        print("⚠️  pypdf not installed. Run: pip install pypdf")
+        logger.warning("pypdf not installed. Run: pip install pypdf")
         return []
 
     if directory is None:
@@ -139,17 +142,17 @@ def load_pdfs(directory: str = None) -> List[Dict[str, str]]:
         directory = Path(directory)
 
     if not directory.exists():
-        print(f"⚠️  Warning: Directory {directory} does not exist")
+        logger.warning(f"Directory {directory} does not exist")
         return []
 
     documents = []
     pdf_files = list(directory.glob("**/*.pdf"))
 
     if not pdf_files:
-        print(f"⚠️  Warning: No PDF files found in {directory}")
+        logger.warning(f"No PDF files found in {directory}")
         return []
 
-    print(f"📂 Found {len(pdf_files)} PDF(s)")
+    logger.info(f"Found {len(pdf_files)} PDF(s)")
 
     for pdf_path in pdf_files:
         try:
@@ -171,10 +174,10 @@ def load_pdfs(directory: str = None) -> List[Dict[str, str]]:
                 }
             })
 
-            print(f"  ✓ Loaded: {pdf_path.name} ({len(reader.pages)} pages)")
+            logger.info(f"Loaded: {pdf_path.name} ({len(reader.pages)} pages)")
 
         except Exception as e:
-            print(f"  ✗ Error loading {pdf_path.name}: {e}")
+            logger.error(f"Error loading {pdf_path.name}: {e}")
 
     return documents
 
@@ -207,5 +210,5 @@ def load_all_documents(directory: str = None, include_pdfs: bool = False) -> Lis
         pdf_docs = load_pdfs(directory)
         all_docs.extend(pdf_docs)
 
-    print(f"\n📊 Total documents loaded: {len(all_docs)}")
+    logger.info(f"Total documents loaded: {len(all_docs)}")
     return all_docs

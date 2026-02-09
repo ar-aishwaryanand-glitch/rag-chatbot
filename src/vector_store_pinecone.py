@@ -5,6 +5,9 @@ from langchain_core.documents import Document
 
 from .config import Config
 from .embeddings import EmbeddingManager
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class PineconeVectorStoreManager:
@@ -50,9 +53,8 @@ class PineconeVectorStoreManager:
             existing_indexes = [index.name for index in pc.list_indexes()]
 
             if self.index_name not in existing_indexes:
-                print(f"📦 Creating new Pinecone index: {self.index_name}")
-                print(f"   Dimension: {dimension}")
-                print("   This may take 30-60 seconds...")
+                logger.info(f"Creating new Pinecone index: {self.index_name} (dimension={dimension})")
+                logger.info("Index creation may take 30-60 seconds...")
 
                 # Create index with serverless spec
                 pc.create_index(
@@ -70,9 +72,9 @@ class PineconeVectorStoreManager:
                 while not pc.describe_index(self.index_name).status['ready']:
                     time.sleep(1)
 
-                print(f"✅ Index {self.index_name} created successfully")
+                logger.info(f"Index {self.index_name} created successfully")
             else:
-                print(f"📦 Using existing Pinecone index: {self.index_name}")
+                logger.info(f"Using existing Pinecone index: {self.index_name}")
 
             # Get index
             self._index = pc.Index(self.index_name)
@@ -84,13 +86,13 @@ class PineconeVectorStoreManager:
                 namespace=self.namespace
             )
 
-            print("✅ Pinecone vector store initialized")
+            logger.info("Pinecone vector store initialized")
 
         except ImportError:
-            print("❌ Pinecone package not installed. Run: pip install pinecone-client langchain-pinecone")
+            logger.error("Pinecone package not installed. Run: pip install pinecone-client langchain-pinecone")
             raise
         except Exception as e:
-            print(f"❌ Failed to initialize Pinecone: {e}")
+            logger.error(f"Failed to initialize Pinecone: {e}")
             raise
 
     def add_documents(
@@ -113,7 +115,7 @@ class PineconeVectorStoreManager:
         if not self.vector_store:
             raise ValueError("Vector store not initialized")
 
-        print(f"📤 Adding {len(documents)} documents to Pinecone...")
+        logger.info(f"Adding {len(documents)} documents to Pinecone...")
 
         all_ids = []
 
@@ -124,16 +126,16 @@ class PineconeVectorStoreManager:
             total_batches = (len(documents) - 1) // batch_size + 1
 
             if show_progress:
-                print(f"   Batch {batch_num}/{total_batches}: Processing {len(batch)} documents...")
+                logger.info(f"Batch {batch_num}/{total_batches}: Processing {len(batch)} documents...")
 
             # Add to Pinecone
             ids = self.vector_store.add_documents(batch)
             all_ids.extend(ids)
 
             if show_progress:
-                print(f"   ✓ Batch {batch_num} completed")
+                logger.info(f"Batch {batch_num} completed")
 
-        print(f"✅ Added {len(all_ids)} documents to Pinecone")
+        logger.info(f"Added {len(all_ids)} documents to Pinecone")
         return all_ids
 
     def similarity_search(
@@ -209,14 +211,14 @@ class PineconeVectorStoreManager:
         if not self._index:
             raise ValueError("Index not initialized")
 
-        print(f"🗑️  Deleting vectors with filter: {filter}")
+        logger.info(f"Deleting vectors with filter: {filter}")
 
         response = self._index.delete(
             filter=filter,
             namespace=self.namespace
         )
 
-        print("✅ Vectors deleted")
+        logger.info("Vectors deleted")
         return response
 
     def delete_all(self) -> Dict[str, Any]:
@@ -229,14 +231,14 @@ class PineconeVectorStoreManager:
         if not self._index:
             raise ValueError("Index not initialized")
 
-        print(f"🗑️  Deleting all vectors in namespace: {self.namespace or 'default'}")
+        logger.info(f"Deleting all vectors in namespace: {self.namespace or 'default'}")
 
         response = self._index.delete(
             delete_all=True,
             namespace=self.namespace
         )
 
-        print("✅ All vectors deleted")
+        logger.info("All vectors deleted")
         return response
 
     def get_index_stats(self) -> Dict[str, Any]:
@@ -337,7 +339,7 @@ class PineconeVectorStoreManager:
 
         # This is a placeholder - full hybrid search requires additional setup
         # For now, fall back to similarity search
-        print("⚠️  Hybrid search not fully implemented, using similarity search")
+        logger.warning("Hybrid search not fully implemented, using similarity search")
         return self.similarity_search(query, k=k, filter=filter)
 
     def is_available(self) -> bool:

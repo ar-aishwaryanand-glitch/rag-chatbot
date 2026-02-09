@@ -3,6 +3,7 @@
 import streamlit as st
 
 from src.auto_indexer import get_auto_indexer
+from src.config import Config
 
 
 def check_and_index_on_startup(force: bool = False) -> dict:
@@ -41,10 +42,8 @@ def handle_file_upload(uploaded_files, auto_index: bool = True):
         return False, "No files to upload", {}
 
     try:
-        from pathlib import Path
-
         # Create documents directory if it doesn't exist
-        docs_dir = Path("data/documents")
+        docs_dir = Config.DOCUMENTS_DIR
         docs_dir.mkdir(parents=True, exist_ok=True)
 
         # Save uploaded files

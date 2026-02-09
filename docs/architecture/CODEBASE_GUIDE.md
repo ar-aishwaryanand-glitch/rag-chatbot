@@ -937,8 +937,9 @@ Inside "Tools & Features":
   [ 🚀 Quick Start ] [ 🎯 QA Tools ] [ 📁 Documents ] [ 🧪 Test Generator ] [ ⚙️ Settings ]
 ```
 
-- **Chat tab** — Conversation UI. Shows welcome message when empty, chat history when active. Chat input is always at the bottom.
+- **Chat tab** — Conversation UI. Shows welcome message when empty, chat history when active. Chat input is always at the bottom (outside tabs so it's visible on both).
 - **Tools & Features tab** — Contains all sub-tabs for QA tools, document management, test generation, and settings.
+- **QA tool forms** — When a QA tool button is clicked in the Tools tab, the input form appears **inline below the buttons** (not in a separate page). The selected button highlights with primary color and a checkmark. Submitted results go to Chat history.
 
 Users can switch between Chat and Tools at any time without losing conversation state.
 
@@ -1454,20 +1455,20 @@ This codebase runs on Python 3.14 which has stricter variable scoping rules. Key
 | Document | Location | Topic |
 |----------|----------|-------|
 | Configuration | `docs/CONFIGURATION.md` | All config options |
-| Auto Indexing | `docs/AUTO_INDEXING_GUIDE.md` | Automatic document indexing |
-| Checkpoints | `docs/CHECKPOINT_GUIDE.md` | Crash recovery setup |
-| Deployment | `docs/DEPLOYMENT_GUIDE.md` | Production deployment |
-| External Services | `docs/EXTERNAL_SERVICES_SETUP.md` | Third-party integrations |
-| Observability | `docs/OBSERVABILITY_GUIDE.md` | Monitoring & tracing |
-| Pinecone Migration | `docs/PINECONE_MIGRATION_GUIDE.md` | FAISS → Pinecone |
-| Policy Engine | `docs/POLICY_ENGINE_GUIDE.md` | Policy configuration |
-| PostgreSQL | `docs/POSTGRES_SETUP.md` | Database setup |
-| QA Features | `docs/QA_FEATURES_REFERENCE.md` | QA tool reference |
-| QA Tools | `docs/QA_TOOLS_GUIDE.md` | QA tool usage guide |
-| Redis Queue | `docs/REDIS_QUEUE_GUIDE.md` | Queue setup |
-| Relevance | `docs/RELEVANCE_FILTERING.md` | Search relevance tuning |
-| Streamlit Deploy | `docs/STREAMLIT_DEPLOYMENT.md` | Streamlit Cloud deployment |
-| Web Scraping | `docs/WEB_SCRAPING_ENHANCEMENTS.md` | Web agent details |
+| Auto Indexing | `docs/operations/AUTO_INDEXING_GUIDE.md` | Automatic document indexing |
+| Checkpoints | `docs/operations/CHECKPOINT_GUIDE.md` | Crash recovery setup |
+| Deployment | `docs/setup/DEPLOYMENT_GUIDE.md` | Production deployment |
+| External Services | `docs/setup/EXTERNAL_SERVICES_SETUP.md` | Third-party integrations |
+| Observability | `docs/operations/OBSERVABILITY_GUIDE.md` | Monitoring & tracing |
+| Pinecone Migration | `docs/operations/PINECONE_MIGRATION_GUIDE.md` | FAISS → Pinecone |
+| Policy Engine | `docs/operations/POLICY_ENGINE_GUIDE.md` | Policy configuration |
+| PostgreSQL | `docs/setup/POSTGRES_SETUP.md` | Database setup |
+| QA Features | `docs/features/QA_FEATURES_REFERENCE.md` | QA tool reference |
+| QA Tools | `docs/features/QA_TOOLS_GUIDE.md` | QA tool usage guide |
+| Redis Queue | `docs/operations/REDIS_QUEUE_GUIDE.md` | Queue setup |
+| Relevance | `docs/features/RELEVANCE_FILTERING.md` | Search relevance tuning |
+| Streamlit Deploy | `docs/setup/STREAMLIT_DEPLOYMENT.md` | Streamlit Cloud deployment |
+| Web Scraping | `docs/features/WEB_SCRAPING_ENHANCEMENTS.md` | Web agent details |
 
 ---
 
@@ -1493,6 +1494,24 @@ Bugfixes and improvements applied during this session:
 | 1 | Tab-based layout | Welcome tabs disappear when chat starts | Two top-level tabs: "Chat" and "Tools & Features" — always accessible | `src/ui/streamlit_app_agent.py` |
 | 2 | LLM answer quality | Wall of raw search snippets concatenated together | 3 short, readable paragraphs structured as a news briefing | `src/agent/agent_executor_v3.py` (synthesis prompt) |
 | 3 | macOS launcher | No way to start app by clicking | `run.command` file — double-click in Finder to start | `run.command` (new file) |
+| 4 | QA tool forms inline | Clicking QA tool button did nothing visible (form appeared in hidden Chat tab) | Form appears inline below buttons in the Tools tab; selected button highlights with primary color + checkmark | `src/ui/streamlit_app_agent.py`, `src/ui/enhanced_components.py` |
+| 5 | QA button selected state | No visual feedback when a QA tool is selected | Selected button turns primary color with ✓ indicator; others stay secondary | `src/ui/enhanced_components.py` |
+
+### Security & Performance (commit `c8200c7`)
+
+| Area | Changes |
+|------|---------|
+| Code executor | Block sandbox escapes (`__mro__`, `__reduce__`), add Windows timeout |
+| File ops | Symlink validation, TOCTOU protection, glob escaping |
+| Web agent | Fix SSRF/DNS rebinding, block numeric IPs, remove `--no-sandbox` |
+| Policy engine | Rate limit persistence, regex timeout protection |
+| Learning module | `RestrictedUnpickler`, SHA256 integrity checks, atomic writes |
+| Vector store | FAISS checksum verification, batch size 50, adaptive delay |
+| Memory manager | Request-level caching, LRU cache for episodic search, cache invalidation |
+| Reflection module | Write batching with background flush |
+| Task queue worker | Document indexing (PDF, DOCX, TXT, MD), adaptive polling with backoff |
+| RAG chain | Pytest syntax validation, test case parsing |
+| Tests | 57 new security and bug fix tests (`tests/test_security.py`, `tests/test_bug_fixes.py`) |
 
 ### Files Modified
 
@@ -1500,9 +1519,20 @@ Bugfixes and improvements applied during this session:
 |------|---------|
 | `.env` | `USE_POSTGRES=false` |
 | `src/agent/agent_executor_v3.py` | Added `import re` at top; removed 3 local `import re`; removed local `import HumanMessage`; added `web_agent` to synthesis; improved synthesis prompt |
-| `src/ui/streamlit_app_agent.py` | Fixed `FileOpsTool(workspace_root=...)` init; removed duplicate `@st.cache_resource`; restructured to tab-based layout (Chat + Tools); added debug logging |
+| `src/ui/streamlit_app_agent.py` | Fixed `FileOpsTool(workspace_root=...)` init; removed duplicate `@st.cache_resource`; tab-based layout; QA tool forms inline in Tools tab; chat input outside tabs |
+| `src/ui/enhanced_components.py` | QA dashboard buttons with selected state (primary color + checkmark) |
+| `src/agent/memory/memory_manager.py` | Request-level context caching, LRU cache for episodic search, cache invalidation |
+| `src/agent/reflection/learning_module.py` | RestrictedUnpickler, SHA256 integrity, atomic writes |
+| `src/agent/reflection/reflection_module.py` | Write batching with background flush |
+| `src/agent/tools/code_executor_tool.py` | Block sandbox escapes, Windows timeout |
+| `src/agent/tools/file_ops_tool.py` | Symlink validation, TOCTOU protection |
+| `src/agent/tools/web_agent_tool.py` | SSRF/DNS rebinding fix, block numeric IPs |
+| `src/policy/policy_engine.py` | Rate limit persistence, regex timeout protection |
+| `src/rag_chain.py` | Pytest syntax validation, test case parsing |
+| `src/vector_store.py` | FAISS checksum verification, batch size 50 |
+| `src/task_queue/worker.py` | Document indexing, adaptive polling with backoff |
 | `run.command` | New file — macOS double-click launcher |
-| `CODEBASE_GUIDE.md` | Comprehensive rewrite with all components documented |
+| `docs/architecture/CODEBASE_GUIDE.md` | Comprehensive rewrite with all components documented |
 
 ---
 

@@ -599,8 +599,7 @@ except Exception as e:
 ## Related Documentation
 
 - [WEB_SCRAPING_ENHANCEMENTS.md](WEB_SCRAPING_ENHANCEMENTS.md) - Web scraping improvements including NewsAPI
-- [POLICY_ENGINE_GUIDE.md](POLICY_ENGINE_GUIDE.md) - Policy engine for domain blocking
-- [BACKEND_STATUS.md](BACKEND_STATUS.md) - Backend services status
+- [POLICY_ENGINE_GUIDE.md](../operations/POLICY_ENGINE_GUIDE.md) - Policy engine for domain blocking
 
 ---
 

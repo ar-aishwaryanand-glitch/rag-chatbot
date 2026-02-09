@@ -20,6 +20,9 @@ import re
 import socket
 
 from .base_tool import BaseTool, ToolResult
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Optional imports with fallbacks
 try:
@@ -359,7 +362,7 @@ class WebAgentTool(BaseTool):
                 for u in urls:
                     is_valid, error, pinned_ip = self.validate_url(u, session_id)
                     if not is_valid:
-                        print(f"⚠️ Skipping {u}: {error}")
+                        logger.warning(f"Skipping {u}: {error}")
                         continue  # Skip blocked URLs instead of failing entirely
                     validated_urls.append(u)
 
@@ -558,7 +561,7 @@ class WebAgentTool(BaseTool):
 
                         # Retry with different user agent if attempts remaining
                         if retry_attempt < self.max_retries:
-                            print(f"⚠️ 403 Forbidden on {url}, retrying with different user agent (attempt {retry_attempt + 1}/{self.max_retries})")
+                            logger.warning(f"403 Forbidden on {url}, retrying with different user agent (attempt {retry_attempt + 1}/{self.max_retries})")
                             await asyncio.sleep(1)  # Brief delay before retry
                             return await self._fetch_and_extract(url, retry_attempt + 1)
                         else:
@@ -597,7 +600,7 @@ class WebAgentTool(BaseTool):
         except Exception as e:
             # Retry on certain exceptions if attempts remaining
             if retry_attempt < self.max_retries and ("403" in str(e) or "forbidden" in str(e).lower()):
-                print(f"⚠️ Error fetching {url}: {str(e)}, retrying (attempt {retry_attempt + 1}/{self.max_retries})")
+                logger.warning(f"Error fetching {url}: {str(e)}, retrying (attempt {retry_attempt + 1}/{self.max_retries})")
                 await asyncio.sleep(1)
                 return await self._fetch_and_extract(url, retry_attempt + 1)
 

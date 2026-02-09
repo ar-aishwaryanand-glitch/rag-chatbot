@@ -3,6 +3,9 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / ".env"
@@ -17,6 +20,8 @@ class Config:
     # API Keys
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # Optional, for embeddings
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")  # Optional, for Claude-powered tools
+    NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")  # Optional, for news search tool
 
     # LLM Provider Configuration
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
@@ -49,6 +54,13 @@ class Config:
 
     # Vector Store Configuration
     VECTOR_STORE_PATH = Path(__file__).parent.parent / "data" / "vector_store"
+
+    # Data Directory Paths
+    DATA_DIR = Path(__file__).parent.parent / "data"
+    DOCUMENTS_DIR = DATA_DIR / "documents"
+    INDEX_METADATA_FILE = DATA_DIR / ".index_metadata.json"
+    MANAGER_MEMORY_PATH = DATA_DIR / "manager_memory"
+    SCHEDULED_TASKS_PATH = DATA_DIR / "scheduled_tasks"
 
     # Vector Store Backend Selection
     USE_PINECONE = os.getenv("USE_PINECONE", "false").lower() == "true"
@@ -109,11 +121,39 @@ class Config:
     USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
     USE_CHECKPOINTS = os.getenv("USE_CHECKPOINTS", "true").lower() == "true"
     DATABASE_URL = os.getenv("DATABASE_URL")  # Full connection string
+    POSTGRES_URL = os.getenv("POSTGRES_URL")  # Alternative full connection string
     POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
     POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
     POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
     POSTGRES_DB = os.getenv("POSTGRES_DB", "rag_chatbot")
+
+    @classmethod
+    def get_postgres_connection_string(cls, use_psycopg_format: bool = False) -> str:
+        """
+        Get PostgreSQL connection string from environment.
+
+        Args:
+            use_psycopg_format: If True, use 'postgres://' prefix (for psycopg3),
+                               otherwise use 'postgresql://' (standard)
+
+        Returns:
+            PostgreSQL connection string
+        """
+        # Try full connection string first
+        conn_str = cls.DATABASE_URL or cls.POSTGRES_URL
+
+        if conn_str:
+            # Convert format if needed
+            if use_psycopg_format and conn_str.startswith('postgresql://'):
+                conn_str = conn_str.replace('postgresql://', 'postgres://', 1)
+            elif not use_psycopg_format and conn_str.startswith('postgres://'):
+                conn_str = conn_str.replace('postgres://', 'postgresql://', 1)
+            return conn_str
+
+        # Build from individual components
+        prefix = 'postgres' if use_psycopg_format else 'postgresql'
+        return f"{prefix}://{cls.POSTGRES_USER}:{cls.POSTGRES_PASSWORD}@{cls.POSTGRES_HOST}:{cls.POSTGRES_PORT}/{cls.POSTGRES_DB}"
 
     # Policy Engine (Optional - for agent behavior control and governance)
     USE_POLICY_ENGINE = os.getenv("USE_POLICY_ENGINE", "true").lower() == "true"
@@ -125,6 +165,28 @@ class Config:
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+    WORKER_POLL_INTERVAL = float(os.getenv("WORKER_POLL_INTERVAL", "0.1"))  # Task worker poll interval in seconds
+
+    @classmethod
+    def get_redis_connection_params(cls) -> dict:
+        """
+        Get Redis connection parameters.
+
+        Returns:
+            Dictionary with host, port, db, and password
+        """
+        # If REDIS_URL is set, parse it
+        if cls.REDIS_URL and cls.REDIS_URL != "redis://localhost:6379/0":
+            # Return URL for direct use
+            return {"url": cls.REDIS_URL}
+
+        # Return individual components
+        return {
+            "host": cls.REDIS_HOST,
+            "port": cls.REDIS_PORT,
+            "db": cls.REDIS_DB,
+            "password": cls.REDIS_PASSWORD or None
+        }
 
     # Confluence Integration (Optional - for fetching documentation from Confluence)
     CONFLUENCE_ENABLED = os.getenv("CONFLUENCE_ENABLED", "false").lower() == "true"
@@ -177,8 +239,7 @@ class Config:
 
         # Validate embedding provider
         if cls.EMBEDDING_PROVIDER == "google" and not cls.GOOGLE_API_KEY:
-            print("⚠️  Warning: Google embeddings selected but no GOOGLE_API_KEY found.")
-            print("   Falling back to HuggingFace embeddings.")
+            logger.warning("Google embeddings selected but no GOOGLE_API_KEY found. Falling back to HuggingFace embeddings.")
             cls.EMBEDDING_PROVIDER = "huggingface"
             cls.EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 

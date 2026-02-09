@@ -9,6 +9,9 @@ import hashlib
 import tempfile
 import os
 from .reflection_module import Reflection, ReflectionType
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class RestrictedUnpickler(pickle.Unpickler):
@@ -98,7 +101,7 @@ class LearningModule:
 
         try:
             # Read stored hash
-            with open(self.hash_file, 'r') as f:
+            with open(self.hash_file, 'r', encoding='utf-8') as f:
                 stored_hash = f.read().strip()
 
             # Calculate current hash
@@ -106,15 +109,13 @@ class LearningModule:
                 current_hash = hashlib.sha256(f.read()).hexdigest()
 
             if stored_hash != current_hash:
-                print(f"⚠️  Learning data integrity check failed!")
-                print(f"   Expected: {stored_hash[:16]}...")
-                print(f"   Got: {current_hash[:16]}...")
+                logger.warning(f"Learning data integrity check failed! Expected: {stored_hash[:16]}..., Got: {current_hash[:16]}...")
                 return False
 
             return True
 
         except Exception as e:
-            print(f"⚠️  Could not verify integrity: {e}")
+            logger.warning(f"Could not verify integrity: {e}")
             return False
 
     def _load_data(self) -> None:
@@ -123,8 +124,7 @@ class LearningModule:
             try:
                 # Verify integrity before loading
                 if not self._verify_integrity():
-                    print("   Refusing to load potentially tampered data")
-                    print("   Starting with fresh learning data")
+                    logger.warning("Refusing to load potentially tampered data. Starting with fresh learning data")
                     return
 
                 with open(self.data_file, 'rb') as f:
@@ -134,8 +134,7 @@ class LearningModule:
                 try:
                     data = restricted_loads(raw_data)
                 except pickle.UnpicklingError as e:
-                    print(f"⚠️  Blocked unsafe pickle load: {e}")
-                    print("   Starting with fresh learning data")
+                    logger.warning(f"Blocked unsafe pickle load: {e}. Starting with fresh learning data")
                     return
 
                 # Restore Counter objects
@@ -159,11 +158,10 @@ class LearningModule:
 
                 tools_count = len(self.tool_usage)
                 total_actions = sum(self.tool_usage.values())
-                print(f"📊 Loaded learning data: {tools_count} tools tracked, {total_actions} total actions")
+                logger.info(f"Loaded learning data: {tools_count} tools tracked, {total_actions} total actions")
 
             except Exception as e:
-                print(f"⚠️  Warning: Could not load learning data: {e}")
-                print("   Starting with fresh learning data")
+                logger.warning(f"Could not load learning data: {e}. Starting with fresh learning data")
 
     def _save_data(self, force: bool = False) -> None:
         """
@@ -215,12 +213,12 @@ class LearningModule:
 
             except Exception:
                 # Clean up temp file on error
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
+                if Path(temp_path).exists():
+                    Path(temp_path).unlink()
                 raise
 
         except Exception as e:
-            print(f"⚠️  Warning: Could not save learning data: {e}")
+            logger.warning(f"Could not save learning data: {e}")
 
     def flush(self) -> None:
         """Force save any pending learning data."""
@@ -384,7 +382,7 @@ class LearningModule:
         """
         rankings = []
 
-        for tool_name in self.tool_usage.keys():
+        for tool_name in self.tool_usage:
             metrics = self.get_tool_performance(tool_name)
             score = metrics["usage_count"] * metrics["success_rate"]
             rankings.append((tool_name, score))
@@ -452,6 +450,6 @@ class LearningModule:
         if self.data_file.exists():
             try:
                 self.data_file.unlink()
-                print("🗑️  Cleared learning data from disk")
+                logger.info("Cleared learning data from disk")
             except Exception as e:
-                print(f"⚠️  Warning: Could not delete learning data file: {e}")
+                logger.warning(f"Could not delete learning data file: {e}")

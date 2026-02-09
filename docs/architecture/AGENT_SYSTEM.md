@@ -319,7 +319,7 @@ class BaseTool:
 
 ### Available Tools
 
-See [TOOLS_REFERENCE.md](TOOLS_REFERENCE.md) for complete list.
+See [TOOLS_REFERENCE.md](../features/TOOLS_REFERENCE.md) for complete list.
 
 | Tool | Description | Example |
 |------|-------------|---------|
@@ -686,6 +686,6 @@ checkpoint_data = checkpoint_mgr.get_checkpoint(
 ## Related Documentation
 
 - [Memory System](MEMORY_SYSTEM.md) - Conversation and episodic memory
-- [Tools Reference](TOOLS_REFERENCE.md) - All available tools
+- [Tools Reference](../features/TOOLS_REFERENCE.md) - All available tools
 - [Database Persistence](DATABASE_PERSISTENCE.md) - Checkpoint storage
-- [Configuration](CONFIGURATION.md) - All agent settings
+- [Configuration](../CONFIGURATION.md) - All agent settings

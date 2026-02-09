@@ -884,6 +884,6 @@ session_manager.update_session_stats(
 
 ## Related Documentation
 
-- [Agent System](AGENT_SYSTEM.md) - Tool integration and routing
-- [Configuration](CONFIGURATION.md) - Tool settings
-- [RAG Core](RAG_CORE.md) - RAG Tool details
+- [Agent System](../architecture/AGENT_SYSTEM.md) - Tool integration and routing
+- [Configuration](../CONFIGURATION.md) - Tool settings
+- [RAG Core](../architecture/RAG_CORE.md) - RAG Tool details

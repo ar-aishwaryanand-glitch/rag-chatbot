@@ -4,7 +4,6 @@ Task worker for processing queued tasks.
 Workers consume tasks from the Redis queue and execute them.
 """
 
-import os
 import time
 import signal
 import uuid
@@ -12,7 +11,11 @@ import random
 from pathlib import Path
 from typing import Optional, Callable
 
+from src.logging_config import get_logger
+from src.config import Config
 from .task_queue import TaskQueue, get_task_queue
+
+logger = get_logger(__name__)
 from .task_models import (
     Task,
     TaskStatus,
@@ -57,7 +60,7 @@ class TaskWorker:
         self.tasks_failed = 0
 
         # Adaptive polling configuration
-        self._base_poll_interval = float(os.getenv('WORKER_POLL_INTERVAL', '0.1'))  # 100ms
+        self._base_poll_interval = Config.WORKER_POLL_INTERVAL
         self._current_poll_interval = self._base_poll_interval
         self._max_poll_interval = 5.0  # 5 second max
         self._jitter_max = 0.1  # 100ms max jitter
@@ -75,22 +78,22 @@ class TaskWorker:
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
-        print(f"\n🛑 Worker {self.worker_id} received shutdown signal")
+        logger.info(f"Worker {self.worker_id} received shutdown signal")
         self.stop()
 
     def start(self):
         """Start the worker."""
         if not self.task_queue.is_available():
-            print("❌ Task queue not available. Worker cannot start.")
+            logger.error("Task queue not available. Worker cannot start.")
             return
 
-        print(f"🚀 Worker {self.worker_id} starting...")
+        logger.info(f"Worker {self.worker_id} starting...")
         self.running = True
 
         # Register worker
         self.task_queue.register_worker(self.worker_id)
 
-        print(f"✅ Worker {self.worker_id} ready")
+        logger.info(f"Worker {self.worker_id} ready")
 
         try:
             self._work_loop()
@@ -99,7 +102,7 @@ class TaskWorker:
 
     def stop(self):
         """Stop the worker gracefully."""
-        print(f"🛑 Worker {self.worker_id} stopping...")
+        logger.info(f"Worker {self.worker_id} stopping...")
         self.running = False
 
     def _work_loop(self):
@@ -134,10 +137,10 @@ class TaskWorker:
                     )
 
             except KeyboardInterrupt:
-                print(f"\n⚠️  Worker {self.worker_id} interrupted")
+                logger.warning(f"Worker {self.worker_id} interrupted")
                 break
             except Exception as e:
-                print(f"❌ Worker error: {e}")
+                logger.error(f"Worker error: {e}")
                 time.sleep(5)  # Wait before retrying
 
     def _process_task(self, task: Task):
@@ -145,7 +148,7 @@ class TaskWorker:
         self.current_task = task
         start_time = time.time()
 
-        print(f"📝 Worker {self.worker_id} processing task {task.task_id}")
+        logger.info(f"Worker {self.worker_id} processing task {task.task_id}")
 
         # Update task status to running
         self.task_queue.update_task_status(
@@ -181,14 +184,14 @@ class TaskWorker:
 
             self.tasks_processed += 1
 
-            print(f"✅ Task {task.task_id} completed in {duration:.2f}s")
+            logger.info(f"Task {task.task_id} completed in {duration:.2f}s")
 
         except Exception as e:
             # Handle failure
             duration = time.time() - start_time
             error_msg = str(e)
 
-            print(f"❌ Task {task.task_id} failed: {error_msg}")
+            logger.error(f"Task {task.task_id} failed: {error_msg}")
 
             # Save failed result
             task_result = TaskResult(
@@ -384,11 +387,11 @@ class TaskWorker:
             # Save with integrity checksum
             vector_store_manager.save_vector_store()
 
-            print(f"✅ Indexed {len(chunks)} chunks from {source_name}")
+            logger.info(f"Indexed {len(chunks)} chunks from {source_name}")
             return len(chunks)
 
         except Exception as e:
-            print(f"❌ Failed to add to vector store: {e}")
+            logger.error(f"Failed to add to vector store: {e}")
             raise
 
     def _handle_batch_query(self, task: Task) -> dict:
@@ -434,23 +437,21 @@ class TaskWorker:
 
     def _cleanup(self):
         """Cleanup on shutdown."""
-        print(f"🧹 Worker {self.worker_id} cleaning up...")
+        logger.info(f"Worker {self.worker_id} cleaning up...")
 
         # Unregister worker
         if self.task_queue.is_available():
             self.task_queue.unregister_worker(self.worker_id)
 
-        print(f"📊 Worker {self.worker_id} stats:")
-        print(f"   Tasks processed: {self.tasks_processed}")
-        print(f"   Tasks failed: {self.tasks_failed}")
+        logger.info(f"Worker {self.worker_id} stats: processed={self.tasks_processed}, failed={self.tasks_failed}")
 
         if self.tasks_processed > 0:
             success_rate = (
                 (self.tasks_processed - self.tasks_failed) / self.tasks_processed * 100
             )
-            print(f"   Success rate: {success_rate:.1f}%")
+            logger.info(f"Worker {self.worker_id} success rate: {success_rate:.1f}%")
 
-        print(f"👋 Worker {self.worker_id} stopped")
+        logger.info(f"Worker {self.worker_id} stopped")
 
     def get_status(self) -> dict:
         """Get worker status."""

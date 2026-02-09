@@ -1,23 +1,30 @@
 """Agent executor with Phase 3 enhancements: Memory + Self-Reflection."""
 
+# Standard library
 import re
 import time
-from typing import Dict, Any, List, Optional
-from langgraph.graph import StateGraph, END
+from typing import Any, Dict, List, Optional
+
+# Third-party
 from langchain_core.messages import HumanMessage
+from langgraph.graph import END, StateGraph
 
-from .agent_state import AgentState
-from .tool_registry import ToolRegistry
-from .memory import MemoryManager
-from .reflection import ReflectionModule, LearningModule
+# Local
+from src.logging_config import get_logger
 from src.observability import get_observability
+from .agent_state import AgentState
+from .memory import MemoryManager
+from .reflection import LearningModule, ReflectionModule
+from .tool_registry import ToolRegistry
 
-# Policy Engine imports
+# Policy Engine imports (optional)
 try:
-    from src.policy import PolicyEngine, PolicyEvaluationContext, PolicyViolation, PolicyAction
+    from src.policy import PolicyAction, PolicyEngine, PolicyEvaluationContext, PolicyViolation
     POLICY_ENGINE_AVAILABLE = True
 except ImportError:
     POLICY_ENGINE_AVAILABLE = False
+
+logger = get_logger(__name__)
 
 
 class AgentExecutorV3:
@@ -85,7 +92,7 @@ class AgentExecutorV3:
                 if not self.checkpoint_manager.is_available():
                     self.checkpoint_manager = None
             except Exception as e:
-                print(f"⚠️  Checkpointing disabled: {e}")
+                logger.warning(f"Checkpointing disabled: {e}")
                 self.checkpoint_manager = None
 
         # Initialize policy engine
@@ -96,7 +103,7 @@ class AgentExecutorV3:
                 if not self.policy_engine.is_enabled():
                     self.policy_engine = None
             except Exception as e:
-                print(f"⚠️  Policy engine disabled: {e}")
+                logger.warning(f"Policy engine disabled: {e}")
                 self.policy_engine = None
 
         self.graph = self._build_graph()
@@ -136,7 +143,7 @@ class AgentExecutorV3:
         # Compile with checkpoint saver if available
         if self.checkpoint_manager and self.checkpoint_manager.is_available():
             checkpointer = self.checkpoint_manager.get_checkpointer()
-            print("✅ LangGraph compiled with checkpoint storage")
+            logger.info("LangGraph compiled with checkpoint storage")
             return workflow.compile(checkpointer=checkpointer)
         else:
             return workflow.compile()
@@ -163,9 +170,9 @@ class AgentExecutorV3:
                     }
                     from .memory.conversation_memory import ConversationMemory
                     self.memory_manager.conversation_memory = ConversationMemory.from_dict(conversation_dict)
-                    print(f"✅ Restored {len(state['conversation_messages'])} messages from checkpoint")
+                    logger.info(f"Restored {len(state['conversation_messages'])} messages from checkpoint")
                 except Exception as e:
-                    print(f"⚠️  Failed to restore conversation history: {e}")
+                    logger.warning(f"Failed to restore conversation history: {e}")
 
             # Add user message to memory
             self.memory_manager.add_user_message(state['query'])
@@ -294,11 +301,11 @@ Respond with ONLY the tool name or "none", nothing else."""
                 if not decision.allowed:
                     state['last_error'] = decision.message or f"Tool '{tool_name}' is blocked by policy"
                     state['policy_violation'] = True
-                    print(f"🚫 Policy violation: {state['last_error']}")
+                    logger.warning(f"Policy violation: {state['last_error']}")
                     return state
 
                 if decision.warnings:
-                    print(f"⚠️  Policy warnings: {', '.join(decision.warnings)}")
+                    logger.warning(f"Policy warnings: {', '.join(decision.warnings)}")
 
                 if decision.action == PolicyAction.REQUIRE_APPROVAL:
                     state['last_error'] = f"Tool '{tool_name}' requires manual approval"
@@ -306,7 +313,7 @@ Respond with ONLY the tool name or "none", nothing else."""
                     return state
 
             except Exception as e:
-                print(f"⚠️  Policy check failed: {e}")
+                logger.warning(f"Policy check failed: {e}")
                 # Continue execution if policy check fails (fail-open for availability)
 
         try:
@@ -476,7 +483,7 @@ Response:"""
                     session_id = state.get('execution_metadata', {}).get('session_id', 'default')
                     self.policy_engine.record_tool_execution(session_id, tool_name)
                 except Exception as e:
-                    print(f"⚠️  Failed to record tool execution: {e}")
+                    logger.warning(f"Failed to record tool execution: {e}")
 
             # Reflect on tool selection if enabled
             if self.enable_reflection and self.reflection_module:
@@ -581,15 +588,14 @@ Provide a natural, conversational response based on the conversation history. If
         last_result = tool_results[-1]
         tool_name = last_result.get('tool', '')
 
-        import sys
-        print(f"[SYNTH] tool_name={tool_name}, success={last_result.get('success')}, output_len={len(str(last_result.get('output','')))}", file=sys.stderr, flush=True)
+        logger.debug(f"[SYNTH] tool_name={tool_name}, success={last_result.get('success')}, output_len={len(str(last_result.get('output','')))}")
 
         if last_result['success']:
             output = last_result['output']
 
             # For web search, web agent, and news, ALWAYS use LLM to synthesize detailed natural language response
             if tool_name in ['web_search', 'web_agent', 'news_api'] and output and len(output) > 30:
-                print(f"[SYNTH] Entering synthesis block for {tool_name}", file=sys.stderr, flush=True)
+                logger.debug(f"[SYNTH] Entering synthesis block for {tool_name}")
                 try:
 
 
@@ -642,12 +648,10 @@ Rules:
                     synthesized = re.sub(r'\n{3,}', '\n\n', synthesized).strip()
 
                     state['final_answer'] = synthesized + sources_line
-                    print(f"✅ Synthesis complete ({len(synthesized)} chars)")
+                    logger.info(f"Synthesis complete ({len(synthesized)} chars)")
 
                 except Exception as e:
-                    print(f"[SYNTH] SYNTHESIS FAILED: {e}", file=sys.stderr, flush=True)
-                    import traceback
-                    traceback.print_exc(file=sys.stderr)
+                    logger.error(f"[SYNTH] SYNTHESIS FAILED: {e}", exc_info=True)
                     # Even on error, try to clean up the output
 
                     cleaned = re.sub(r'Missing:\s*[^|]+\|\s*Show results with:[^\n]+', '', output)
@@ -742,10 +746,10 @@ Rules:
                     }
 
                 if decision.warnings:
-                    print(f"⚠️  Policy warnings: {', '.join(decision.warnings)}")
+                    logger.warning(f"Policy warnings: {', '.join(decision.warnings)}")
 
             except Exception as e:
-                print(f"⚠️  Policy evaluation failed: {e}")
+                logger.warning(f"Policy evaluation failed: {e}")
                 # Continue execution if policy check fails (fail-open)
 
         # Initialize state
@@ -771,7 +775,7 @@ Rules:
         config = {}
         if thread_id and self.checkpoint_manager and self.checkpoint_manager.is_available():
             config = {"configurable": {"thread_id": thread_id}}
-            print(f"🔖 Checkpointing enabled for thread: {thread_id}")
+            logger.info(f"Checkpointing enabled for thread: {thread_id}")
 
         # Execute graph with optional checkpointing
         if config:
@@ -808,7 +812,7 @@ Rules:
         if not checkpoint:
             raise ValueError(f"No checkpoint found for thread: {thread_id}")
 
-        print(f"🔄 Resuming from checkpoint for thread: {thread_id}")
+        logger.info(f"Resuming from checkpoint for thread: {thread_id}")
 
         # Prepare config
         config = {"configurable": {"thread_id": thread_id}}
@@ -905,7 +909,7 @@ Rules:
                 for v in violations
             ]
         except Exception as e:
-            print(f"⚠️  Failed to get policy violations: {e}")
+            logger.warning(f"Failed to get policy violations: {e}")
             return []
 
     def get_active_policies(self, policy_type: str = None) -> List[Dict[str, Any]]:
@@ -938,7 +942,7 @@ Rules:
                 for p in policies
             ]
         except Exception as e:
-            print(f"⚠️  Failed to get policies: {e}")
+            logger.warning(f"Failed to get policies: {e}")
             return []
 
     # =========================================================================
@@ -1000,12 +1004,12 @@ Rules:
             # Submit to queue
             task_id = task_queue.submit_task(task)
 
-            print(f"📤 Task submitted: {task_id} ({priority} priority)")
+            logger.info(f"Task submitted: {task_id} ({priority} priority)")
 
             return task_id
 
         except Exception as e:
-            print(f"❌ Failed to submit async task: {e}")
+            logger.error(f"Failed to submit async task: {e}")
             raise
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -1042,7 +1046,7 @@ Rules:
             return None
 
         except Exception as e:
-            print(f"⚠️  Failed to get task status: {e}")
+            logger.warning(f"Failed to get task status: {e}")
             return None
 
     def get_task_result(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -1078,7 +1082,7 @@ Rules:
             return None
 
         except Exception as e:
-            print(f"⚠️  Failed to get task result: {e}")
+            logger.warning(f"Failed to get task result: {e}")
             return None
 
     def cancel_task(self, task_id: str):
@@ -1097,4 +1101,4 @@ Rules:
                 task_queue.cancel_task(task_id)
 
         except Exception as e:
-            print(f"⚠️  Failed to cancel task: {e}")
+            logger.warning(f"Failed to cancel task: {e}")

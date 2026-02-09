@@ -1,6 +1,5 @@
 """File operations tool with workspace restrictions."""
 
-import os
 import glob as glob_module
 from pathlib import Path
 from .base_tool import BaseTool
