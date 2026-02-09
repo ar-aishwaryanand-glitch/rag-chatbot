@@ -7,6 +7,10 @@ Evaluates policies, enforces rules, and tracks violations.
 import os
 import re
 import yaml
+import json
+import atexit
+import threading
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -49,17 +53,27 @@ class PolicyEngine:
     - Audit logging
     """
 
-    def __init__(self, config_path: Optional[str] = None, enable_audit: bool = True):
+    # Regex pattern timeout (seconds) to prevent ReDoS
+    REGEX_TIMEOUT = 1.0
+
+    def __init__(self, config_path: Optional[str] = None, enable_audit: bool = True, persist_rate_limits: bool = True):
         """
         Initialize policy engine.
 
         Args:
             config_path: Path to policy configuration file
             enable_audit: Enable audit logging
+            persist_rate_limits: Enable file-based persistence for rate limits
         """
         self.policies: Dict[str, PolicyRule] = {}
         self.enable_audit = enable_audit
+        self.persist_rate_limits = persist_rate_limits
         self.enabled = self._check_enabled()
+
+        # Persistence path
+        self._persistence_path = Path(__file__).parent.parent.parent / "data" / "policy"
+        self._rate_limit_file = self._persistence_path / "rate_limits.json"
+        self._save_lock = threading.Lock()
 
         # Tracking state
         self.request_counts: Dict[str, List[datetime]] = defaultdict(list)
@@ -68,12 +82,110 @@ class PolicyEngine:
         self.tool_executions: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self.violations: List[PolicyViolationRecord] = []
 
+        # Load persisted rate limits
+        if self.enabled and self.persist_rate_limits:
+            self._load_rate_limits()
+            # Register save on exit
+            atexit.register(self._save_rate_limits)
+
         # Load policies from config
         if self.enabled:
             self._load_policies(config_path)
             print("✅ Policy Engine initialized")
         else:
             print("📝 Policy Engine disabled")
+
+    def _load_rate_limits(self) -> None:
+        """Load persisted rate limit counters from disk."""
+        if not self._rate_limit_file.exists():
+            return
+
+        try:
+            with open(self._rate_limit_file, 'r') as f:
+                data = json.load(f)
+
+            # Restore request counts
+            for key, timestamps in data.get('request_counts', {}).items():
+                self.request_counts[key] = [
+                    datetime.fromisoformat(ts) for ts in timestamps
+                ]
+
+            # Restore token counts
+            for key, entries in data.get('token_counts', {}).items():
+                self.token_counts[key] = [
+                    (datetime.fromisoformat(ts), count) for ts, count in entries
+                ]
+
+            # Restore cost tracking
+            for key, entries in data.get('cost_tracking', {}).items():
+                self.cost_tracking[key] = [
+                    (datetime.fromisoformat(ts), cost) for ts, cost in entries
+                ]
+
+            # Restore tool executions
+            for session_id, tools in data.get('tool_executions', {}).items():
+                for tool_name, count in tools.items():
+                    self.tool_executions[session_id][tool_name] = count
+
+            print(f"📊 Loaded rate limit state from {self._rate_limit_file}")
+
+        except Exception as e:
+            print(f"⚠️  Could not load rate limits: {e}")
+
+    def _save_rate_limits(self) -> None:
+        """Save rate limit counters to disk."""
+        if not self.persist_rate_limits:
+            return
+
+        with self._save_lock:
+            try:
+                # Ensure directory exists
+                self._persistence_path.mkdir(parents=True, exist_ok=True)
+
+                # Clean old data before saving
+                now = datetime.now()
+                self._clean_old_tracking_data_all(now)
+
+                # Prepare data for serialization
+                data = {
+                    'saved_at': now.isoformat(),
+                    'request_counts': {
+                        key: [ts.isoformat() for ts in timestamps]
+                        for key, timestamps in self.request_counts.items()
+                        if timestamps  # Only save non-empty
+                    },
+                    'token_counts': {
+                        key: [[ts.isoformat(), count] for ts, count in entries]
+                        for key, entries in self.token_counts.items()
+                        if entries
+                    },
+                    'cost_tracking': {
+                        key: [[ts.isoformat(), cost] for ts, cost in entries]
+                        for key, entries in self.cost_tracking.items()
+                        if entries
+                    },
+                    'tool_executions': {
+                        session_id: dict(tools)
+                        for session_id, tools in self.tool_executions.items()
+                        if tools
+                    }
+                }
+
+                # Atomic write (write to temp file, then rename)
+                temp_file = self._rate_limit_file.with_suffix('.tmp')
+                with open(temp_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+
+                temp_file.replace(self._rate_limit_file)
+
+            except Exception as e:
+                print(f"⚠️  Could not save rate limits: {e}")
+
+    def _clean_old_tracking_data_all(self, now: datetime) -> None:
+        """Clean old tracking data for all keys."""
+        keys_to_clean = list(self.request_counts.keys())
+        for key in keys_to_clean:
+            self._clean_old_tracking_data(key, now)
 
     def _check_enabled(self) -> bool:
         """Check if policy engine is enabled."""
@@ -464,12 +576,17 @@ class PolicyEngine:
                         if policy.action == PolicyAction.DENY:
                             highest_action = PolicyAction.DENY
 
-            # Check for blocked patterns (regex)
+            # Check for blocked patterns (regex with timeout protection)
             for pattern in policy.blocked_patterns:
-                if re.search(pattern, content, re.IGNORECASE):
-                    violated_rules.append(policy)
-                    if policy.action == PolicyAction.DENY:
-                        highest_action = PolicyAction.DENY
+                try:
+                    # Use a timeout-protected regex match
+                    if self._safe_regex_search(pattern, content):
+                        violated_rules.append(policy)
+                        if policy.action == PolicyAction.DENY:
+                            highest_action = PolicyAction.DENY
+                except Exception as e:
+                    # Log but don't fail on bad patterns
+                    print(f"⚠️  Regex pattern error: {e}")
 
         allowed = highest_action != PolicyAction.DENY
         message = "Content violates policy" if not allowed else None
@@ -593,6 +710,53 @@ class PolicyEngine:
         self.request_counts[key] = [t for t in self.request_counts[key] if now - t < timedelta(days=1)]
         self.token_counts[key] = [(t, c) for t, c in self.token_counts[key] if now - t < timedelta(days=1)]
         self.cost_tracking[key] = [(t, c) for t, c in self.cost_tracking[key] if now - t < timedelta(days=7)]
+
+    def _safe_regex_search(self, pattern: str, content: str, timeout: float = None) -> bool:
+        """
+        Perform regex search with timeout protection to prevent ReDoS attacks.
+
+        Args:
+            pattern: Regex pattern to search
+            content: Content to search in
+            timeout: Timeout in seconds (uses REGEX_TIMEOUT if not specified)
+
+        Returns:
+            True if pattern matches, False otherwise
+        """
+        timeout = timeout or self.REGEX_TIMEOUT
+
+        # For very long content, truncate to prevent catastrophic backtracking
+        max_content_length = 100000  # 100KB max
+        if len(content) > max_content_length:
+            content = content[:max_content_length]
+
+        # Use threading for timeout (cross-platform)
+        result = {'matched': False, 'error': None}
+
+        def search():
+            try:
+                result['matched'] = bool(re.search(pattern, content, re.IGNORECASE))
+            except re.error as e:
+                result['error'] = e
+
+        thread = threading.Thread(target=search)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout)
+
+        if thread.is_alive():
+            # Regex timed out - treat as no match but log warning
+            print(f"⚠️  Regex pattern timed out: {pattern[:50]}...")
+            return False
+
+        if result['error']:
+            raise result['error']
+
+        return result['matched']
+
+    def save_state(self) -> None:
+        """Manually trigger a save of rate limit state."""
+        self._save_rate_limits()
 
     def _record_violation(self, context: PolicyEvaluationContext, violated_rules: List[PolicyRule], action: PolicyAction):
         """Record a policy violation."""

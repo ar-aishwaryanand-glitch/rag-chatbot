@@ -1,5 +1,7 @@
 """File operations tool with workspace restrictions."""
 
+import os
+import glob as glob_module
 from pathlib import Path
 from .base_tool import BaseTool
 
@@ -75,7 +77,10 @@ Use for exploring files, reading documents, or finding specific files."""
 
     def _is_safe_path(self, path: Path) -> bool:
         """
-        Check if path is within workspace.
+        Check if path is within workspace with symlink resolution.
+
+        Validates both the path and its resolved form to prevent symlink-based
+        traversal attacks (TOCTOU protection).
 
         Args:
             path: Path to check
@@ -84,15 +89,57 @@ Use for exploring files, reading documents, or finding specific files."""
             True if path is safe
         """
         try:
+            # First check: the constructed path must be within workspace
             path.relative_to(self.workspace_root)
+
+            # Second check: resolve symlinks and verify the real path
+            # This prevents symlink attacks where a symlink inside workspace
+            # points to files outside workspace
+            if path.exists():
+                real_path = path.resolve()
+                real_workspace = self.workspace_root.resolve()
+
+                # Verify resolved path is still within workspace
+                try:
+                    real_path.relative_to(real_workspace)
+                except ValueError:
+                    return False
+
             return True
         except ValueError:
             return False
 
+    def _validate_path_at_access(self, path: Path) -> bool:
+        """
+        Validate path immediately before access (TOCTOU protection).
+
+        This should be called right before any file operation to minimize
+        the window between check and use.
+
+        Args:
+            path: Path to validate
+
+        Returns:
+            True if path is safe to access
+        """
+        # Re-resolve and validate at time of use
+        try:
+            if path.exists() or path.is_symlink():
+                real_path = path.resolve()
+                real_workspace = self.workspace_root.resolve()
+                real_path.relative_to(real_workspace)
+            return True
+        except (ValueError, OSError):
+            return False
+
     def _read_file(self, file_path: Path) -> str:
-        """Read file contents with multiple encoding attempts."""
+        """Read file contents with multiple encoding attempts and TOCTOU protection."""
         if not file_path.exists():
             return f"Error: File not found: {file_path.name}"
+
+        # TOCTOU protection: validate path right before access
+        if not self._validate_path_at_access(file_path):
+            return f"Error: Access denied - symlink points outside workspace: {file_path.name}"
 
         # Check for broken symlinks
         if file_path.is_symlink() and not file_path.resolve().exists():
@@ -156,7 +203,7 @@ Use for exploring files, reading documents, or finding specific files."""
             return f"Error: Permission denied: {dir_path.name}"
 
     def _search_files(self, pattern: Path) -> str:
-        """Search for files matching pattern."""
+        """Search for files matching pattern with proper escaping."""
         pattern_str = str(pattern)
 
         # Validate pattern
@@ -164,12 +211,14 @@ Use for exploring files, reading documents, or finding specific files."""
             return "Error: Search pattern cannot be empty"
 
         try:
-            # Escape special glob characters for literal matching
-            # But preserve * and ? for wildcards if user intentionally included them
-            # For now, use the pattern as-is but catch any errors
+            # Escape special glob characters to prevent injection
+            # Only allow * and ? as wildcards, escape everything else
+            safe_pattern = glob_module.escape(pattern_str)
+            # Re-enable * and ? for intentional wildcard use
+            safe_pattern = safe_pattern.replace(r'\*', '*').replace(r'\?', '?')
 
             # Use glob from workspace root
-            matches = list(self.workspace_root.glob(f"**/*{pattern_str}*"))
+            matches = list(self.workspace_root.glob(f"**/*{safe_pattern}*"))
 
             if not matches:
                 return f"No files found matching: {pattern_str}"
@@ -177,6 +226,14 @@ Use for exploring files, reading documents, or finding specific files."""
             lines = [f"Files matching '{pattern_str}':\n"]
 
             for match in matches[:20]:  # Limit to 20 results
+                # Filter out symlinks that resolve outside workspace
+                if match.is_symlink():
+                    try:
+                        resolved = match.resolve()
+                        resolved.relative_to(self.workspace_root.resolve())
+                    except (ValueError, OSError):
+                        continue  # Skip symlinks pointing outside workspace
+
                 rel_path = match.relative_to(self.workspace_root)
                 if match.is_dir():
                     lines.append(f"  📁 {rel_path}/")

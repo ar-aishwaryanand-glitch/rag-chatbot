@@ -4,9 +4,12 @@ Task worker for processing queued tasks.
 Workers consume tasks from the Redis queue and execute them.
 """
 
+import os
 import time
 import signal
 import uuid
+import random
+from pathlib import Path
 from typing import Optional, Callable
 
 from .task_queue import TaskQueue, get_task_queue
@@ -53,6 +56,12 @@ class TaskWorker:
         self.tasks_processed = 0
         self.tasks_failed = 0
 
+        # Adaptive polling configuration
+        self._base_poll_interval = float(os.getenv('WORKER_POLL_INTERVAL', '0.1'))  # 100ms
+        self._current_poll_interval = self._base_poll_interval
+        self._max_poll_interval = 5.0  # 5 second max
+        self._jitter_max = 0.1  # 100ms max jitter
+
         # Task type handlers
         self.handlers = {
             TaskType.AGENT_QUERY: self._handle_agent_query,
@@ -94,7 +103,7 @@ class TaskWorker:
         self.running = False
 
     def _work_loop(self):
-        """Main work loop."""
+        """Main work loop with adaptive polling."""
         last_heartbeat = time.time()
         heartbeat_interval = 30  # seconds
 
@@ -110,9 +119,19 @@ class TaskWorker:
 
                 if task:
                     self._process_task(task)
+                    # Reset backoff on successful task fetch
+                    self._current_poll_interval = self._base_poll_interval
                 else:
-                    # No tasks available, wait a bit
-                    time.sleep(1)
+                    # No tasks available - apply exponential backoff with jitter
+                    jitter = random.uniform(0, self._jitter_max)
+                    sleep_time = self._current_poll_interval + jitter
+                    time.sleep(sleep_time)
+
+                    # Increase backoff (exponential)
+                    self._current_poll_interval = min(
+                        self._current_poll_interval * 2,
+                        self._max_poll_interval
+                    )
 
             except KeyboardInterrupt:
                 print(f"\n⚠️  Worker {self.worker_id} interrupted")
@@ -226,20 +245,151 @@ class TaskWorker:
         }
 
     def _handle_document_index(self, task: Task) -> dict:
-        """Handle document indexing task."""
-        # Placeholder for document indexing
-        # Would integrate with document manager
+        """
+        Handle document indexing task.
 
+        Loads the document, chunks it, generates embeddings, and adds to vector store.
+        """
         document_path = task.payload.get('document_path')
         if not document_path:
             raise ValueError("No document_path in task payload")
 
-        # TODO: Implement document indexing
-        return {
-            'document_path': document_path,
-            'indexed': True,
-            'chunks': 0
-        }
+        doc_path = Path(document_path)
+        if not doc_path.exists():
+            raise FileNotFoundError(f"Document not found: {document_path}")
+
+        # Determine file type and load content
+        file_ext = doc_path.suffix.lower()
+        content = ""
+
+        try:
+            if file_ext == '.pdf':
+                content = self._load_pdf(doc_path)
+            elif file_ext == '.docx':
+                content = self._load_docx(doc_path)
+            elif file_ext in ['.txt', '.md', '.rst']:
+                content = doc_path.read_text(encoding='utf-8')
+            else:
+                raise ValueError(f"Unsupported file type: {file_ext}")
+
+            if not content.strip():
+                return {
+                    'document_path': document_path,
+                    'indexed': False,
+                    'chunks': 0,
+                    'error': 'Document is empty or could not be read'
+                }
+
+            # Chunk the document
+            chunks = self._chunk_document(content, doc_path.name)
+
+            # Generate embeddings and add to vector store
+            chunk_count = self._add_to_vector_store(chunks, doc_path.name)
+
+            return {
+                'document_path': document_path,
+                'indexed': True,
+                'chunks': chunk_count,
+                'file_type': file_ext
+            }
+
+        except Exception as e:
+            return {
+                'document_path': document_path,
+                'indexed': False,
+                'chunks': 0,
+                'error': str(e)
+            }
+
+    def _load_pdf(self, path: Path) -> str:
+        """Load text from PDF file."""
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(str(path))
+            text_parts = []
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    text_parts.append(text)
+            return '\n'.join(text_parts)
+        except ImportError:
+            raise ImportError("PyPDF2 not installed. Install with: pip install PyPDF2")
+
+    def _load_docx(self, path: Path) -> str:
+        """Load text from DOCX file."""
+        try:
+            from docx import Document
+            doc = Document(str(path))
+            text_parts = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text)
+            return '\n'.join(text_parts)
+        except ImportError:
+            raise ImportError("python-docx not installed. Install with: pip install python-docx")
+
+    def _chunk_document(self, content: str, source_name: str) -> list:
+        """Chunk document using RecursiveCharacterTextSplitter."""
+        try:
+            from langchain.text_splitter import RecursiveCharacterTextSplitter
+            from langchain_core.documents import Document
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len,
+                separators=["\n\n", "\n", " ", ""]
+            )
+
+            texts = splitter.split_text(content)
+
+            # Create Document objects with metadata
+            chunks = [
+                Document(
+                    page_content=text,
+                    metadata={
+                        'source': source_name,
+                        'chunk_index': i,
+                        'total_chunks': len(texts)
+                    }
+                )
+                for i, text in enumerate(texts)
+            ]
+
+            return chunks
+
+        except ImportError:
+            raise ImportError("langchain not installed. Install with: pip install langchain")
+
+    def _add_to_vector_store(self, chunks: list, source_name: str) -> int:
+        """Add chunks to vector store."""
+        if not chunks:
+            return 0
+
+        try:
+            from src.embeddings import EmbeddingManager
+            from src.vector_store import VectorStoreManager
+
+            # Initialize embedding manager and vector store
+            embedding_manager = EmbeddingManager()
+            vector_store_manager = VectorStoreManager(embedding_manager)
+
+            if vector_store_manager.vector_store is None:
+                # Create new vector store
+                vector_store_manager.create_vector_store(chunks, batch_size=50, delay=0)
+            else:
+                # Add to existing vector store
+                vector_store_manager.vector_store.add_documents(chunks)
+
+            # Save with integrity checksum
+            vector_store_manager.save_vector_store()
+
+            print(f"✅ Indexed {len(chunks)} chunks from {source_name}")
+            return len(chunks)
+
+        except Exception as e:
+            print(f"❌ Failed to add to vector store: {e}")
+            raise
 
     def _handle_batch_query(self, task: Task) -> dict:
         """Handle batch query task."""

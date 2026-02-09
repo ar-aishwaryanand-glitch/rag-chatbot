@@ -1,6 +1,8 @@
 """RAG chain implementation for question answering."""
 
-from typing import List, Dict, Union, TYPE_CHECKING, Tuple, Optional
+import ast
+import re
+from typing import List, Dict, Union, TYPE_CHECKING, Tuple, Optional, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 import time
@@ -673,9 +675,24 @@ Requirements Context:
                 # Clean up the code - remove markdown code blocks if present
                 pytest_code = self._clean_code_output(pytest_code)
 
+                # Validate Python syntax
+                is_valid, syntax_error = self._validate_python_syntax(pytest_code)
+                if not is_valid:
+                    print(f"⚠️  Generated code has syntax errors: {syntax_error}")
+                    # Try to fix common issues
+                    pytest_code = self._attempt_syntax_fix(pytest_code)
+                    # Re-validate
+                    is_valid, syntax_error = self._validate_python_syntax(pytest_code)
+                    if not is_valid:
+                        print(f"⚠️  Could not fix syntax errors automatically")
+
                 # Generate suggested filename
                 feature_name = self._extract_feature_name(requirement_query)
                 suggested_filename = f"test_{feature_name}.py"
+
+                # Validate filename
+                if not self._is_valid_python_filename(suggested_filename):
+                    suggested_filename = "test_generated.py"
 
                 # Step 4: Extract sources
                 sources = [
@@ -708,7 +725,9 @@ Requirements Context:
                     "suggested_filename": suggested_filename,
                     "context": documents,
                     "sources": sources,
-                    "num_requirements": len(documents)
+                    "num_requirements": len(documents),
+                    "syntax_valid": is_valid,
+                    "syntax_error": syntax_error
                 }
 
             except Exception as e:
@@ -718,6 +737,73 @@ Requirements Context:
                     {"operation": "generate_pytest_code", "error": str(e)[:100]}
                 )
                 raise
+
+    def _attempt_syntax_fix(self, code: str) -> str:
+        """Attempt to fix common syntax issues in generated code."""
+        # Fix common issues
+        lines = code.split('\n')
+        fixed_lines = []
+
+        for line in lines:
+            # Fix incomplete strings
+            if line.count('"') % 2 != 0 and not line.rstrip().endswith('\\'):
+                line = line + '"'
+            if line.count("'") % 2 != 0 and not line.rstrip().endswith('\\'):
+                line = line + "'"
+
+            # Remove trailing colons without body
+            stripped = line.rstrip()
+            if stripped.endswith(':') and not any(stripped.startswith(kw) for kw in
+                ['def ', 'class ', 'if ', 'elif ', 'else:', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ']):
+                line = line.rstrip(':')
+
+            fixed_lines.append(line)
+
+        # Ensure proper indentation after class/def
+        result_lines = []
+        needs_pass = False
+        indent_level = 0
+
+        for line in fixed_lines:
+            stripped = line.strip()
+
+            if needs_pass and stripped and not stripped.startswith('#'):
+                # Check if this line is at the correct indent level
+                current_indent = len(line) - len(line.lstrip())
+                if current_indent <= indent_level:
+                    result_lines.append(' ' * (indent_level + 4) + 'pass')
+                needs_pass = False
+
+            result_lines.append(line)
+
+            if stripped.endswith(':') and any(stripped.startswith(kw) for kw in
+                ['def ', 'class ', 'if ', 'elif ', 'else:', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ']):
+                indent_level = len(line) - len(line.lstrip())
+                needs_pass = True
+
+        if needs_pass:
+            result_lines.append(' ' * (indent_level + 4) + 'pass')
+
+        return '\n'.join(result_lines)
+
+    def _is_valid_python_filename(self, filename: str) -> bool:
+        """Check if filename is valid for Python module."""
+        if not filename.endswith('.py'):
+            return False
+
+        # Get module name without .py
+        module_name = filename[:-3]
+
+        # Check it's a valid identifier
+        if not module_name.isidentifier():
+            return False
+
+        # Check it's not a Python keyword
+        import keyword
+        if keyword.iskeyword(module_name):
+            return False
+
+        return True
 
     def _clean_code_output(self, code: str) -> str:
         """Remove markdown code blocks from LLM output."""
@@ -731,7 +817,6 @@ Requirements Context:
 
     def _extract_feature_name(self, query: str) -> str:
         """Extract a valid Python filename from the query."""
-        import re
         # Extract key words, convert to snake_case
         words = re.findall(r'\b[a-zA-Z]+\b', query.lower())
         # Take first 3-4 meaningful words, skip common words
@@ -739,7 +824,103 @@ Requirements Context:
         feature_words = [w for w in words if w not in skip_words][:4]
         if not feature_words:
             feature_words = ['feature']
-        return '_'.join(feature_words)
+
+        # Validate the filename is a valid Python identifier
+        filename = '_'.join(feature_words)
+        filename = self._sanitize_python_identifier(filename)
+        return filename
+
+    def _sanitize_python_identifier(self, name: str) -> str:
+        """Ensure name is a valid Python identifier."""
+        # Remove non-alphanumeric characters except underscore
+        sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)
+        # Ensure doesn't start with a digit
+        if sanitized and sanitized[0].isdigit():
+            sanitized = 'test_' + sanitized
+        # Ensure not empty
+        if not sanitized:
+            sanitized = 'feature'
+        return sanitized
+
+    def _validate_python_syntax(self, code: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate Python syntax using ast.parse().
+
+        Args:
+            code: Python code to validate
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            ast.parse(code)
+            return True, None
+        except SyntaxError as e:
+            return False, f"Syntax error at line {e.lineno}: {e.msg}"
+        except Exception as e:
+            return False, f"Parse error: {str(e)}"
+
+    def _parse_test_cases(self, output: str) -> List[Dict[str, Any]]:
+        """
+        Parse test cases from LLM output into structured format.
+
+        Args:
+            output: Raw LLM output containing test cases
+
+        Returns:
+            List of parsed test case dictionaries
+        """
+        test_cases = []
+
+        # Split by test case markers
+        tc_pattern = r'\*\*TC_(\d+):\s*([^\*]+)\*\*'
+        matches = re.finditer(tc_pattern, output)
+
+        for match in matches:
+            tc_id = f"TC_{match.group(1)}"
+            title = match.group(2).strip()
+
+            # Find the content between this TC and the next one (or end)
+            start_pos = match.end()
+            next_match = re.search(tc_pattern, output[start_pos:])
+            if next_match:
+                end_pos = start_pos + next_match.start()
+            else:
+                end_pos = len(output)
+
+            tc_content = output[start_pos:end_pos]
+
+            # Extract priority
+            priority_match = re.search(r'\*\*Priority:\*\*\s*(High|Medium|Low)', tc_content, re.IGNORECASE)
+            priority = priority_match.group(1) if priority_match else 'Medium'
+
+            # Extract type
+            type_match = re.search(r'\*\*Type:\*\*\s*([^\n*]+)', tc_content)
+            tc_type = type_match.group(1).strip() if type_match else 'Functional'
+
+            # Extract preconditions
+            precond_match = re.search(r'\*\*Preconditions:\*\*\s*([^\n*]+)', tc_content)
+            preconditions = precond_match.group(1).strip() if precond_match else ''
+
+            # Extract Given/When/Then
+            given_match = re.search(r'\*\*Given:\*\*\s*([^\n*]+)', tc_content)
+            when_match = re.search(r'\*\*When:\*\*\s*([^\n*]+)', tc_content)
+            then_match = re.search(r'\*\*Then:\*\*\s*([^\n*]+)', tc_content)
+
+            test_case = {
+                'id': tc_id,
+                'title': title,
+                'priority': priority,
+                'type': tc_type,
+                'preconditions': preconditions,
+                'given': given_match.group(1).strip() if given_match else '',
+                'when': when_match.group(1).strip() if when_match else '',
+                'then': then_match.group(1).strip() if then_match else '',
+            }
+
+            test_cases.append(test_case)
+
+        return test_cases
 
     def display_result(self, result: Dict[str, any]) -> None:
         """

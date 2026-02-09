@@ -4,7 +4,42 @@ from typing import Dict, List, Any, Optional
 from collections import Counter, defaultdict
 from pathlib import Path
 import pickle
+import io
+import hashlib
+import tempfile
+import os
 from .reflection_module import Reflection, ReflectionType
+
+
+class RestrictedUnpickler(pickle.Unpickler):
+    """
+    Restricted unpickler that only allows safe types.
+
+    Prevents arbitrary code execution via pickle deserialization attacks.
+    """
+
+    # Whitelist of allowed modules and their safe classes
+    SAFE_MODULES = {
+        'builtins': {'dict', 'list', 'set', 'tuple', 'str', 'int', 'float', 'bool', 'bytes', 'type', 'NoneType'},
+        'collections': {'Counter', 'defaultdict', 'OrderedDict'},
+        'datetime': {'datetime', 'date', 'time', 'timedelta'},
+    }
+
+    def find_class(self, module: str, name: str):
+        """Only allow whitelisted classes to be unpickled."""
+        if module in self.SAFE_MODULES:
+            allowed_classes = self.SAFE_MODULES[module]
+            if name in allowed_classes:
+                return super().find_class(module, name)
+
+        raise pickle.UnpicklingError(
+            f"Attempted to unpickle unsafe class: {module}.{name}"
+        )
+
+
+def restricted_loads(data: bytes) -> Any:
+    """Safely load pickled data using RestrictedUnpickler."""
+    return RestrictedUnpickler(io.BytesIO(data)).load()
 
 
 class LearningModule:
@@ -32,6 +67,11 @@ class LearningModule:
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self.data_file = self.storage_path / "learning_data.pkl"
+        self.hash_file = self.storage_path / "learning_data.sha256"
+
+        # Batching support
+        self._pending_saves = 0
+        self._save_threshold = 10  # Save after N learning events
 
         # Tool performance tracking
         self.tool_usage = Counter()  # tool_name -> count
@@ -51,12 +91,52 @@ class LearningModule:
         # Load existing data if available
         self._load_data()
 
+    def _verify_integrity(self) -> bool:
+        """Verify file integrity using SHA256 hash."""
+        if not self.data_file.exists() or not self.hash_file.exists():
+            return True  # No file to verify
+
+        try:
+            # Read stored hash
+            with open(self.hash_file, 'r') as f:
+                stored_hash = f.read().strip()
+
+            # Calculate current hash
+            with open(self.data_file, 'rb') as f:
+                current_hash = hashlib.sha256(f.read()).hexdigest()
+
+            if stored_hash != current_hash:
+                print(f"⚠️  Learning data integrity check failed!")
+                print(f"   Expected: {stored_hash[:16]}...")
+                print(f"   Got: {current_hash[:16]}...")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️  Could not verify integrity: {e}")
+            return False
+
     def _load_data(self) -> None:
-        """Load learning data from disk."""
+        """Load learning data from disk with integrity verification."""
         if self.data_file.exists():
             try:
+                # Verify integrity before loading
+                if not self._verify_integrity():
+                    print("   Refusing to load potentially tampered data")
+                    print("   Starting with fresh learning data")
+                    return
+
                 with open(self.data_file, 'rb') as f:
-                    data = pickle.load(f)
+                    raw_data = f.read()
+
+                # Use restricted unpickler for safety
+                try:
+                    data = restricted_loads(raw_data)
+                except pickle.UnpicklingError as e:
+                    print(f"⚠️  Blocked unsafe pickle load: {e}")
+                    print("   Starting with fresh learning data")
+                    return
 
                 # Restore Counter objects
                 self.tool_usage = Counter(data.get('tool_usage', {}))
@@ -85,8 +165,19 @@ class LearningModule:
                 print(f"⚠️  Warning: Could not load learning data: {e}")
                 print("   Starting with fresh learning data")
 
-    def _save_data(self) -> None:
-        """Save learning data to disk."""
+    def _save_data(self, force: bool = False) -> None:
+        """
+        Save learning data to disk with atomic writes and integrity hash.
+
+        Args:
+            force: Force save even if below threshold
+        """
+        self._pending_saves += 1
+
+        # Batch saves unless forced
+        if not force and self._pending_saves < self._save_threshold:
+            return
+
         try:
             # Convert data structures to serializable format
             data = {
@@ -99,11 +190,41 @@ class LearningModule:
                 'quality_scores': self.quality_scores
             }
 
-            with open(self.data_file, 'wb') as f:
-                pickle.dump(data, f)
+            # Serialize to bytes
+            serialized = pickle.dumps(data)
+
+            # Calculate hash
+            data_hash = hashlib.sha256(serialized).hexdigest()
+
+            # Atomic write: write to temp file, then rename
+            temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path)
+            try:
+                os.write(temp_fd, serialized)
+                os.close(temp_fd)
+
+                # Move temp file to final location (atomic on POSIX)
+                os.replace(temp_path, str(self.data_file))
+
+                # Write hash file
+                hash_temp_fd, hash_temp_path = tempfile.mkstemp(dir=self.storage_path)
+                os.write(hash_temp_fd, data_hash.encode())
+                os.close(hash_temp_fd)
+                os.replace(hash_temp_path, str(self.hash_file))
+
+                self._pending_saves = 0
+
+            except Exception:
+                # Clean up temp file on error
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise
 
         except Exception as e:
             print(f"⚠️  Warning: Could not save learning data: {e}")
+
+    def flush(self) -> None:
+        """Force save any pending learning data."""
+        self._save_data(force=True)
 
     def learn_from_reflection(self, reflection: Reflection) -> None:
         """

@@ -1,5 +1,7 @@
 """Reflection module for agent self-evaluation."""
 
+import atexit
+import threading
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -65,13 +67,15 @@ class ReflectionModule:
     - Performance tracking
     """
 
-    def __init__(self, llm=None, storage_path: Optional[Path] = None):
+    def __init__(self, llm=None, storage_path: Optional[Path] = None, buffer_size: int = 10, flush_interval: float = 30.0):
         """
-        Initialize reflection module with persistence.
+        Initialize reflection module with persistence and write batching.
 
         Args:
             llm: Optional LLM for generating reflections (can work without)
             storage_path: Path to store reflection history (default: data/reflections)
+            buffer_size: Number of reflections to buffer before flush (default: 10)
+            flush_interval: Seconds between background flushes (default: 30)
         """
         self.llm = llm
 
@@ -82,6 +86,19 @@ class ReflectionModule:
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self.reflections_file = self.storage_path / "reflections.jsonl"  # JSONL for easy appending
+
+        # Write batching configuration
+        self._buffer_size = buffer_size
+        self._flush_interval = flush_interval
+        self._write_buffer: List[Reflection] = []
+        self._buffer_lock = threading.Lock()
+
+        # Background flush timer
+        self._flush_timer: Optional[threading.Timer] = None
+        self._start_flush_timer()
+
+        # Register cleanup on exit
+        atexit.register(self.flush)
 
         # Load existing reflections
         self.reflections: List[Reflection] = []
@@ -104,14 +121,51 @@ class ReflectionModule:
                 print(f"⚠️  Warning: Could not load reflection history: {e}")
                 print("   Starting with fresh reflection history")
 
+    def _start_flush_timer(self) -> None:
+        """Start the background flush timer."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+
+        self._flush_timer = threading.Timer(self._flush_interval, self._background_flush)
+        self._flush_timer.daemon = True
+        self._flush_timer.start()
+
+    def _background_flush(self) -> None:
+        """Background timer callback to flush the buffer."""
+        self.flush()
+        # Restart timer
+        self._start_flush_timer()
+
     def _save_reflection(self, reflection: Reflection) -> None:
-        """Save a reflection to disk (append to JSONL file)."""
+        """Buffer a reflection for batched writing."""
+        with self._buffer_lock:
+            self._write_buffer.append(reflection)
+
+            # Flush if buffer is full
+            if len(self._write_buffer) >= self._buffer_size:
+                self._flush_buffer()
+
+    def _flush_buffer(self) -> None:
+        """Flush the write buffer to disk (must hold _buffer_lock)."""
+        if not self._write_buffer:
+            return
+
         try:
+            # Append all buffered reflections at once
             with open(self.reflections_file, 'a') as f:
-                json.dump(reflection.to_dict(), f)
-                f.write('\n')
+                for reflection in self._write_buffer:
+                    json.dump(reflection.to_dict(), f)
+                    f.write('\n')
+
+            self._write_buffer.clear()
+
         except Exception as e:
-            print(f"⚠️  Warning: Could not save reflection: {e}")
+            print(f"⚠️  Warning: Could not flush reflections: {e}")
+
+    def flush(self) -> None:
+        """Force flush any buffered reflections to disk."""
+        with self._buffer_lock:
+            self._flush_buffer()
 
     def reflect_on_tool_selection(
         self,
@@ -500,7 +554,9 @@ class ReflectionModule:
 
     def clear(self) -> None:
         """Clear all reflections."""
-        self.reflections.clear()
+        with self._buffer_lock:
+            self.reflections.clear()
+            self._write_buffer.clear()
 
         # Delete saved reflections file
         if self.reflections_file.exists():
@@ -509,3 +565,11 @@ class ReflectionModule:
                 print("🗑️  Cleared reflection history from disk")
             except Exception as e:
                 print(f"⚠️  Warning: Could not delete reflections file: {e}")
+
+    def stop(self) -> None:
+        """Stop background timer and flush remaining data."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+            self._flush_timer = None
+
+        self.flush()

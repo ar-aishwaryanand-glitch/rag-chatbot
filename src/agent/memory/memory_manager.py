@@ -2,6 +2,8 @@
 
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+from functools import lru_cache
+import hashlib
 
 from .conversation_memory import ConversationMemory
 from .episodic_memory import EpisodicMemory, Episode
@@ -41,11 +43,18 @@ class MemoryManager:
 
         self.session_id = self.conversation_memory.session_id
 
+        # Request-level caching
+        self._context_cache: Dict[str, str] = {}
+        self._context_cache_key: Optional[str] = None
+        self._last_message_count: int = 0
+
     # ===== Conversation Memory Methods =====
 
     def add_user_message(self, content: str, metadata: Optional[Dict] = None) -> None:
         """Add a user message to conversation memory."""
         self.conversation_memory.add_message("user", content, metadata)
+        # Invalidate cache when conversation changes
+        self._invalidate_cache()
 
     def add_assistant_message(
         self,
@@ -59,6 +68,8 @@ class MemoryManager:
             metadata["tools_used"] = tools_used
 
         self.conversation_memory.add_message("assistant", content, metadata)
+        # Invalidate cache when conversation changes
+        self._invalidate_cache()
 
     def get_conversation_context(self, max_messages: Optional[int] = None) -> str:
         """Get formatted conversation context."""
@@ -117,7 +128,7 @@ class MemoryManager:
 
     def search_past_conversations(self, query: str, max_results: int = 3) -> List[Episode]:
         """
-        Search past conversations for relevant context.
+        Search past conversations for relevant context with LRU caching.
 
         Args:
             query: Search query
@@ -126,6 +137,11 @@ class MemoryManager:
         Returns:
             List of relevant episodes
         """
+        return self._cached_episode_search(query, max_results)
+
+    @lru_cache(maxsize=32)
+    def _cached_episode_search(self, query: str, max_results: int) -> List[Episode]:
+        """LRU-cached episode search to avoid repeated searches."""
         return self.episodic_memory.search_episodes(query, max_results)
 
     def get_relevant_history(self, current_query: str) -> str:
@@ -169,6 +185,8 @@ class MemoryManager:
         """
         Get complete context including conversation history and relevant past episodes.
 
+        Uses request-level caching to avoid rebuilding context multiple times per request.
+
         Args:
             current_query: Current user query
             include_episodic: Whether to include past episodes
@@ -177,6 +195,14 @@ class MemoryManager:
         Returns:
             Formatted context string
         """
+        # Generate cache key
+        cache_key = self._generate_cache_key(current_query, include_episodic, max_conversation_messages)
+
+        # Check if we have a valid cached result
+        if cache_key in self._context_cache and self._is_cache_valid():
+            return self._context_cache[cache_key]
+
+        # Build context
         context_parts = []
 
         # Add relevant past episodes
@@ -190,7 +216,35 @@ class MemoryManager:
         if conversation_context:
             context_parts.append(conversation_context)
 
-        return "\n\n".join(context_parts)
+        result = "\n\n".join(context_parts)
+
+        # Cache the result
+        self._context_cache[cache_key] = result
+        self._context_cache_key = cache_key
+        self._last_message_count = len(self.conversation_memory.messages)
+
+        return result
+
+    def _generate_cache_key(self, query: str, include_episodic: bool, max_messages: Optional[int]) -> str:
+        """Generate a cache key for context requests."""
+        key_parts = [
+            query,
+            str(include_episodic),
+            str(max_messages),
+            str(len(self.conversation_memory.messages))
+        ]
+        return hashlib.md5("|".join(key_parts).encode()).hexdigest()
+
+    def _is_cache_valid(self) -> bool:
+        """Check if the current cache is still valid."""
+        return len(self.conversation_memory.messages) == self._last_message_count
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate the context cache."""
+        self._context_cache.clear()
+        self._context_cache_key = None
+        # Also clear the LRU cache for episode search when new messages arrive
+        self._cached_episode_search.cache_clear()
 
     # ===== Statistics and Monitoring =====
 
@@ -238,8 +292,10 @@ class MemoryManager:
     def clear_conversation(self) -> None:
         """Clear current conversation memory (keeps episodic)."""
         self.conversation_memory.clear()
+        self._invalidate_cache()
 
     def clear_all_memory(self) -> None:
         """Clear all memory (conversation + episodic). Use with caution!"""
         self.conversation_memory.clear()
         self.episodic_memory.clear_all()
+        self._invalidate_cache()

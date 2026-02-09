@@ -144,53 +144,82 @@ class WebAgentTool(BaseTool):
         else:
             raise Exception(result.error or "Web agent execution failed")
 
-    def validate_url(self, url: str, session_id: str = "default") -> tuple[bool, Optional[str]]:
+    # DNS cache for pinning (prevent DNS rebinding attacks)
+    _dns_cache: Dict[str, str] = {}
+
+    def validate_url(self, url: str, session_id: str = "default") -> tuple[bool, Optional[str], Optional[str]]:
         """
-        Validate URL for security (prevent SSRF attacks) and policy compliance.
+        Validate URL for security (prevent SSRF and DNS rebinding attacks) and policy compliance.
 
         Args:
             url: URL to validate
             session_id: Session ID for policy evaluation
 
         Returns:
-            Tuple of (is_valid, error_message)
+            Tuple of (is_valid, error_message, pinned_ip)
         """
         try:
             parsed = urlparse(url)
 
             # Check scheme
             if parsed.scheme not in ['http', 'https']:
-                return False, f"Invalid URL scheme '{parsed.scheme}'. Only http and https are allowed."
+                return False, f"Invalid URL scheme '{parsed.scheme}'. Only http and https are allowed.", None
 
             # Check for empty or invalid hostname
             if not parsed.netloc:
-                return False, "URL must include a hostname"
+                return False, "URL must include a hostname", None
 
             # Extract hostname (remove port if present)
             hostname = parsed.netloc.split(':')[0]
 
-            # Block localhost variations
-            localhost_variants = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '0:0:0:0:0:0:0:1']
+            # Comprehensive localhost variants blocklist (including IPv6)
+            localhost_variants = [
+                'localhost',
+                '127.0.0.1', '127.0.0.2', '127.1', '127.1.1.1',  # IPv4 loopback variants
+                '0.0.0.0', '0', '0.0', '0.0.0',  # Zero address variants
+                '::1', '::ffff:127.0.0.1',  # IPv6 loopback
+                '0:0:0:0:0:0:0:1', '0000:0000:0000:0000:0000:0000:0000:0001',  # Full IPv6 loopback
+                '::ffff:0:0', '::ffff:0.0.0.0',  # IPv4-mapped IPv6
+                '[::1]', '[0:0:0:0:0:0:0:1]',  # Bracketed IPv6
+            ]
             if hostname.lower() in localhost_variants:
-                return False, "Access to localhost is not allowed"
+                return False, "Access to localhost is not allowed", None
 
-            # Try to resolve hostname and check if it's a private IP
+            # Block numeric IP representations (decimal, octal, hex)
+            # e.g., 2130706433 = 127.0.0.1, 0x7f000001 = 127.0.0.1
+            if self._is_numeric_ip(hostname):
+                return False, "Numeric IP representations are not allowed", None
+
+            # Try to resolve hostname and check if it's a private IP (DNS pinning)
             try:
-                # Get IP address
+                # Get IP address and pin it
                 ip_str = socket.gethostbyname(hostname)
+
+                # Store in DNS cache for pinning
+                self._dns_cache[hostname] = ip_str
+
                 ip = ipaddress.ip_address(ip_str)
 
                 # Check if it's a private/internal IP
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                    return False, "Access to private/internal IP addresses is not allowed"
+                    return False, "Access to private/internal IP addresses is not allowed", None
 
-                # Block AWS metadata endpoint specifically
-                if ip_str == '169.254.169.254':
-                    return False, "Access to cloud metadata endpoints is not allowed"
+                # Block cloud metadata endpoints
+                metadata_ips = [
+                    '169.254.169.254',  # AWS, GCP, Azure metadata
+                    '169.254.170.2',    # AWS ECS metadata
+                    'fd00:ec2::254',    # AWS IPv6 metadata
+                ]
+                if ip_str in metadata_ips:
+                    return False, "Access to cloud metadata endpoints is not allowed", None
+
+                # Additional check: verify IP doesn't map to private ranges when converted
+                if self._is_private_ip_variant(ip_str):
+                    return False, "Access to private IP addresses is not allowed", None
 
             except socket.gaierror:
                 # Could not resolve - might be invalid hostname
-                return False, f"Could not resolve hostname: {hostname}"
+                return False, f"Could not resolve hostname: {hostname}", None
             except ValueError:
                 # Invalid IP address format - but we'll allow it since gethostbyname worked
                 pass
@@ -207,12 +236,82 @@ class WebAgentTool(BaseTool):
 
                 decision = self.policy_engine.evaluate_tool_usage(context)
                 if not decision.allowed:
-                    return False, f"Policy blocked: {decision.message or 'Domain not allowed'}"
+                    return False, f"Policy blocked: {decision.message or 'Domain not allowed'}", None
 
-            return True, None
+            return True, None, ip_str
 
         except Exception as e:
-            return False, f"URL validation error: {str(e)}"
+            return False, f"URL validation error: {str(e)}", None
+
+    def _is_numeric_ip(self, hostname: str) -> bool:
+        """Check if hostname is a numeric IP representation (decimal, octal, hex)."""
+        # Decimal IP (e.g., 2130706433 for 127.0.0.1)
+        try:
+            num = int(hostname)
+            if 0 <= num <= 0xFFFFFFFF:
+                return True
+        except ValueError:
+            pass
+
+        # Hex IP (e.g., 0x7f000001)
+        try:
+            if hostname.lower().startswith('0x'):
+                num = int(hostname, 16)
+                if 0 <= num <= 0xFFFFFFFF:
+                    return True
+        except ValueError:
+            pass
+
+        # Octal IP (e.g., 0177.0.0.1)
+        if '.' in hostname:
+            parts = hostname.split('.')
+            try:
+                if any(p.startswith('0') and len(p) > 1 and p.isdigit() for p in parts):
+                    return True
+            except (ValueError, AttributeError):
+                pass
+
+        return False
+
+    def _is_private_ip_variant(self, ip_str: str) -> bool:
+        """Check if IP is a private address variant."""
+        try:
+            ip = ipaddress.ip_address(ip_str)
+
+            # Standard private ranges
+            private_ranges = [
+                ipaddress.ip_network('10.0.0.0/8'),
+                ipaddress.ip_network('172.16.0.0/12'),
+                ipaddress.ip_network('192.168.0.0/16'),
+                ipaddress.ip_network('127.0.0.0/8'),
+                ipaddress.ip_network('169.254.0.0/16'),  # Link-local
+                ipaddress.ip_network('fc00::/7'),  # IPv6 private
+                ipaddress.ip_network('fe80::/10'),  # IPv6 link-local
+            ]
+
+            for network in private_ranges:
+                if ip in network:
+                    return True
+
+            return False
+        except ValueError:
+            return False
+
+    def _validate_redirect(self, redirect_url: str, session_id: str = "default") -> tuple[bool, Optional[str]]:
+        """
+        Validate a redirect URL to prevent SSRF via redirects.
+
+        Args:
+            redirect_url: The URL being redirected to
+            session_id: Session ID for policy evaluation
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        is_valid, error, _ = self.validate_url(redirect_url, session_id)
+        if not is_valid:
+            return False, f"Redirect blocked: {error}"
+        return True, None
 
     def run_tool(self, url: str = None, urls: List[str] = None, query: str = None, session_id: str = "default") -> ToolResult:
         """
@@ -240,8 +339,8 @@ class WebAgentTool(BaseTool):
         try:
             # Determine operation mode
             if url:
-                # Validate single URL
-                is_valid, error = self.validate_url(url, session_id)
+                # Validate single URL with DNS pinning
+                is_valid, error, pinned_ip = self.validate_url(url, session_id)
                 if not is_valid:
                     return ToolResult(
                         success=False,
@@ -255,10 +354,10 @@ class WebAgentTool(BaseTool):
                 return result
 
             elif urls:
-                # Validate all URLs
+                # Validate all URLs with DNS pinning
                 validated_urls = []
                 for u in urls:
-                    is_valid, error = self.validate_url(u, session_id)
+                    is_valid, error, pinned_ip = self.validate_url(u, session_id)
                     if not is_valid:
                         print(f"⚠️ Skipping {u}: {error}")
                         continue  # Skip blocked URLs instead of failing entirely
@@ -410,12 +509,13 @@ class WebAgentTool(BaseTool):
         try:
             async with async_playwright() as p:
                 # Launch browser with stealth mode
+                # NOTE: --no-sandbox removed for security (prevents Chrome sandbox bypass)
                 browser = await p.chromium.launch(
                     headless=True,
                     args=[
                         '--disable-blink-features=AutomationControlled',
                         '--disable-dev-shm-usage',
-                        '--no-sandbox'
+                        # Security: sandbox enabled (no --no-sandbox flag)
                     ]
                 )
 
@@ -570,7 +670,7 @@ class WebAgentTool(BaseTool):
             )
 
     def _clean_text(self, text: str) -> str:
-        """Clean extracted text."""
+        """Clean extracted text with content sanitization."""
         # Remove excessive whitespace
         text = re.sub(r'\n\s*\n', '\n\n', text)
         text = re.sub(r' +', ' ', text)
@@ -579,6 +679,20 @@ class WebAgentTool(BaseTool):
         lines = text.split('\n')
         cleaned_lines = [line for line in lines if len(line.strip()) > 20 or line.strip() == '']
         text = '\n'.join(cleaned_lines)
+
+        # Content sanitization: remove potentially dangerous patterns
+        # Remove script/style content that might have slipped through
+        text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'data:', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'vbscript:', '', text, flags=re.IGNORECASE)
+
+        # Remove HTML tags that might have been missed
+        text = re.sub(r'<[^>]+>', '', text)
+
+        # Remove null bytes and other control characters (except newline/tab)
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
 
         return text.strip()
 
