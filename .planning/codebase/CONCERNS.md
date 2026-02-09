@@ -4,254 +4,350 @@
 
 ## Tech Debt
 
-**Incomplete Document Indexing Implementation:**
-- Issue: Document indexing in task queue is stubbed with `TODO` comment and `pass` statements
-- Files: `src/task_queue/worker.py:237`
-- Impact: Task queue cannot process `DOCUMENT_INDEX` tasks - they return mock results without actually indexing documents. Async document processing relies on placeholder implementation.
-- Fix approach: Complete `_handle_document_index()` method to call document manager's indexing pipeline. Add integration tests to verify document processing through queue.
+**Logging via Print Statements:**
+- Issue: 293+ print() statements used throughout codebase instead of proper logging framework
+- Files: `src/rag_chain.py`, `src/vector_store.py`, `src/config.py`, `src/policy/policy_engine.py`, `src/embeddings.py`, `src/auto_indexer.py`, and 40+ other files
+- Impact: Cannot control log levels, difficult to filter/search logs in production, performance overhead with string formatting
+- Fix approach: Implement structured logging using Python's logging module or structlog. Replace all print() calls with logger.info/warning/error. Add log level configuration to `src/config.py`.
 
-**Scattered Placeholder Methods:**
-- Issue: 27+ methods across codebase contain `pass` statements without implementation
-- Files: `src/rag_chain.py:136,152,159`, `src/ui/streamlit_app_agent.py:1656,1896`, `src/agent/tools/base_tool.py:36,42,52`, and others
-- Impact: Abstract base classes and utility functions lack concrete implementations. Test framework methods are partially stubbed. Callers may not know which methods are unimplemented.
-- Fix approach: Document which methods are intentional abstract methods vs. incomplete. Implement or remove placeholder methods. Add proper abstract base class decorators where appropriate.
+**Streamlit State Management Complexity:**
+- Issue: 278+ direct `st.session_state` and `st.cache` calls scattered across UI components
+- Files: `src/ui/streamlit_app_agent.py` (2411 lines), `src/ui/state_manager.py`, `src/ui/enhanced_components.py`, `src/ui/components.py`
+- Impact: Difficult to track state changes, prone to race conditions, makes testing UI logic nearly impossible
+- Fix approach: Centralize state management in `src/ui/state_manager.py` with typed state classes. Create state mutation functions instead of direct assignments. Extract business logic from UI components.
 
-**RAG Chain Test Case Generation (Lines 135-168):**
-- Issue: Test case generation prompt and template parsing is outlined but helper methods are empty
-- Files: `src/rag_chain.py:135-168`
-- Impact: Callers cannot generate structured test cases from requirements; returns None silently. QA pipeline partially depends on this for test case synthesis.
-- Fix approach: Implement `parse_test_cases()` and `generate_test_cases()` methods to extract test case structure from LLM responses using regex/parsing.
+**Global Singleton Pattern Overuse:**
+- Issue: Multiple modules use global singleton instances with factory functions
+- Files: `src/observability.py` (_observability_manager), `src/rag_chain.py` (_reranker), `src/policy/policy_store.py` (_policy_store), `src/auto_indexer.py` (_auto_indexer_instance), `src/database/checkpoint_backend.py` (_checkpoint_manager), `src/task_queue/task_queue.py` (_task_queue)
+- Impact: Makes unit testing difficult (requires mocking globals), can cause issues with concurrent execution, violates dependency injection principles
+- Fix approach: Use dependency injection pattern. Pass instances through constructors instead of global factory functions. For caching, use @lru_cache or explicit cache objects.
+
+**Exception Handling Breadth:**
+- Issue: 255 broad exception handlers using `except Exception` without specific error types
+- Files: Across 47 files in `src/` directory
+- Impact: Catches and may hide critical errors, makes debugging difficult, can mask programming errors
+- Fix approach: Use specific exception types (ValueError, IOError, ConnectionError, etc.). Only catch Exception at top-level handlers. Add explicit re-raise for unexpected errors.
+
+**Deprecated Configuration:**
+- Issue: PINECONE_ENVIRONMENT setting marked as deprecated but still used
+- Files: `src/config.py:55`
+- Impact: May break when Pinecone removes legacy environment parameter
+- Fix approach: Update to use PINECONE_CLOUD/PINECONE_REGION pattern. Add migration warning in setup scripts.
+
+**Large Monolithic UI File:**
+- Issue: Main Streamlit app is 2411 lines in a single file
+- Files: `src/ui/streamlit_app_agent.py`
+- Impact: Difficult to maintain, slow to load, hard to test, violates single responsibility
+- Fix approach: Split into separate modules by page/feature (chat.py, documents.py, settings.py, qa_pipeline.py). Use Streamlit multipage apps pattern.
+
+**TODOs in Production Code:**
+- Issue: Placeholder TODO comments in test generation logic
+- Files: `src/rag_chain.py:137`, `src/rag_chain.py:148`, `src/rag_chain.py:160`
+- Impact: Test cases generated with incomplete implementation
+- Fix approach: Complete the test generation logic or remove placeholder comments to clarify intended behavior.
+
+**Legacy Code Path:**
+- Issue: Legacy VectorStoreManager (FAISS) code path still maintained alongside Pinecone
+- Files: `src/agent/tools/doc_management_tool.py:91`
+- Impact: Dual code paths increase complexity and testing burden
+- Fix approach: Create abstraction layer for vector store operations. Implement adapter pattern so tools don't need to know about FAISS vs Pinecone.
+
+**Deprecated Function in UI:**
+- Issue: Full sidebar function marked DEPRECATED but not removed
+- Files: `src/ui/streamlit_app_agent.py:304`
+- Impact: Dead code increases maintenance burden
+- Fix approach: Remove deprecated function if no longer used, or complete migration to render_minimal_sidebar().
 
 ## Known Bugs
 
-**Pickle Deserialization Security Risk:**
-- Symptoms: Untrusted pickle data loaded without validation can execute arbitrary code during deserialization
-- Files: `src/agent/reflection/learning_module.py:59`, `data/learning/learning_data.pkl`
-- Trigger: Corrupt, malicious, or version-mismatched pickle file causes silent failure or code execution
-- Workaround: Always validate pickle file integrity and never accept pickle files from untrusted sources. Restrict file permissions to `0600`.
-- Root cause: Using pickle for persistence without validation or version pinning
+**Pickle Deserialization Vulnerability (FIXED):**
+- Symptoms: Arbitrary code execution via malicious pickle files
+- Files: `src/agent/reflection/learning_module.py`
+- Trigger: Load tampered learning_data.pkl file
+- Status: Fixed with restricted_loads() implementation, verified by tests in `tests/test_bug_fixes.py`
 
-**FAISS Deserialization Dangerous Flag:**
-- Symptoms: `allow_dangerous_deserialization=True` flag bypasses safety checks on vector store loading
-- Files: `src/vector_store.py:32,116`
-- Trigger: Corrupt or malicious FAISS index file causes undefined behavior
-- Workaround: Only load FAISS indices from trusted sources. Use file integrity checking (SHA256) before loading.
-- Root cause: FAISS security flag required for backwards compatibility but introduces risk
+**FAISS Integrity Check Bypass (FIXED):**
+- Symptoms: Tampered vector store index loaded without detection
+- Files: `src/vector_store.py:35`
+- Trigger: Modify index.faiss file directly
+- Status: Fixed with SHA256 checksum verification, verified by tests
 
-**Unvalidated Document Index State:**
-- Symptoms: Document auto-indexing may not track state correctly after app restart
-- Files: `src/auto_indexer.py`, `src/ui/auto_index_integration.py`
-- Trigger: App restart, concurrent uploads, network interruption during indexing
-- Workaround: Manually re-index documents from UI if state appears inconsistent
-- Root cause: Episodic memory stores index metadata in JSON but lacks atomic transactions
+**Task Queue Index Duplication (FIXED):**
+- Symptoms: Documents indexed multiple times when using Redis queue
+- Files: `src/task_queue/task_queue.py`, `src/task_queue/worker.py`
+- Status: Fixed with deduplication logic
+
+**Conversation Memory Loss (FIXED):**
+- Symptoms: App hangs and loses conversation context
+- Files: `src/ui/streamlit_app_agent.py`, `src/agent/agent_executor_v3.py`
+- Status: Fixed with proper state management and checkpoint recovery
 
 ## Security Considerations
 
-**Code Execution Tool Has Basic Sandboxing:**
-- Risk: Even with AST validation and restricted builtins, malicious code may escape sandbox through Python interpreter vulnerabilities
-- Files: `src/agent/tools/code_executor_tool.py:29-150`
-- Current mitigation: Disabled by default (`CODE_EXECUTOR_ENABLED=false`), timeout enforcement, restricted `__builtins__`, AST validation before execution
-- Recommendations: For production use, isolate execution in Docker container or subprocess with resource limits. Consider using RestrictedPython library. Add comprehensive input sanitization. Never enable without explicit user opt-in and warning.
+**Code Execution Sandboxing:**
+- Risk: CodeExecutorTool has basic sandboxing that may be bypassable
+- Files: `src/agent/tools/code_executor_tool.py`
+- Current mitigation: AST validation, restricted builtins, timeout enforcement, forbidden pattern checking
+- Recommendations: Add resource limits (memory, CPU), use subprocess isolation instead of in-process exec(), implement proper seccomp/AppArmor policies for production
 
-**Confluence API Credentials in Environment:**
-- Risk: API tokens and credentials stored in plaintext in `.env` file can be leaked if committed to git
-- Files: `src/confluence_loader.py:39-64`, `.env`
-- Current mitigation: `.env` is in `.gitignore`, credentials loaded via `Config.CONFLUENCE_*` variables
-- Recommendations: Use secrets manager (AWS Secrets, HashiCorp Vault, Supabase) instead of `.env` for production. Implement credential rotation policy. Audit all `.gitignore` violations regularly. Use environment-specific credential scoping.
+**Web Agent SSRF Vulnerability:**
+- Risk: WebAgentTool can be directed to internal network addresses
+- Files: `src/agent/tools/web_agent_tool.py`
+- Current mitigation: URL validation, blacklist for private IP ranges
+- Recommendations: Implement strict allowlist for permitted domains, add request rate limiting, use network-level egress filtering
 
-**Database Connection Pooling Threads:**
-- Risk: ThreadPoolExecutor with 3 workers in `PostgresBackend` may cause resource exhaustion under high load or thread leaks on application crash
-- Files: `src/database/postgres_backend.py:49`
-- Current mitigation: Executor defined with max_workers=3, connection pool size 3-20
-- Recommendations: Use context managers for all database operations to ensure cleanup. Implement executor shutdown on application exit (atexit hook). Monitor thread count in production. Consider using async/await instead of threads for I/O.
+**Regex DoS Protection:**
+- Risk: Malicious regex patterns in policy engine could cause denial of service
+- Files: `src/policy/policy_engine.py:56-58`
+- Current mitigation: REGEX_TIMEOUT = 1.0 second limit
+- Recommendations: Pre-validate regex patterns at load time, use re2 library for guaranteed linear time matching, add complexity analysis
 
-**Missing Rate Limiting on Tool Execution:**
-- Risk: No rate limits on expensive tools (web agent, code executor) allows DoS or cost explosion from single session
-- Files: `src/agent/agent_executor_v3.py:266-450` (tool execution), `src/policy/policy_engine.py` (incomplete integration)
-- Current mitigation: Policy engine has rate limit definitions but not enforced in tool execution loop
-- Recommendations: Implement rate limit checks before tool execution. Track tool costs and implement budget alerts. Add per-session and per-tool quotas. Implement exponential backoff for retries.
+**Secrets in Environment:**
+- Risk: .env file exists with sensitive credentials, logged in deployment guide
+- Files: `.env` (exists), `DEPLOYMENT.md:51-91`, `.env.example`
+- Current mitigation: .env in .gitignore, .env.example as template
+- Recommendations: Migrate to secret management service (AWS Secrets Manager, HashiCorp Vault), add git-secrets pre-commit hook, scan for accidentally committed secrets
 
-**Web Scraping Tool Insufficient User-Agent & Error Handling:**
-- Risk: Playwright-based web agent may get blocked by WAF/anti-bot systems or scrape harmful content without validation
-- Files: `src/agent/tools/web_agent_tool.py:653` (incomplete error handling)
-- Current mitigation: Basic Playwright setup, try-catch blocks around navigation
-- Recommendations: Add realistic user-agent rotation, respect robots.txt, implement content filtering for malicious sites. Add retry logic with exponential backoff. Monitor for WAF blocks and gracefully degrade.
+**Policy Persistence Race Condition:**
+- Risk: Concurrent access to rate_limits.json without file locking
+- Files: `src/policy/policy_engine.py:135-148` (_save_rate_limits)
+- Current mitigation: Threading lock (_save_lock) for in-process coordination
+- Recommendations: Use atomic file writes (write to temp file, rename), add file-based locking (fcntl/portalocker), or migrate to Redis for distributed coordination
 
-**No Input Validation on File Operations:**
-- Risk: File paths from user input not validated can allow path traversal attacks (reading arbitrary files)
-- Files: `src/agent/tools/file_ops_tool.py`, `src/ui/document_handler.py`
-- Current mitigation: Workspace limited to `data/workspace/` directory
-- Recommendations: Validate all file paths are within workspace boundary using `os.path.realpath()`. Reject paths containing `..` or symlinks. Implement allowlist of readable file types. Log all file access attempts.
-
-**PostgreSQL Connection String Hardcoded Fallback:**
-- Risk: Default credentials (`postgres:postgres@localhost:5432/rag_chatbot`) used if environment not configured, exposing database to unauthorized access
-- Files: `src/database/postgres_backend.py:52-67`
-- Current mitigation: Environment variables checked first, fallback only if missing
-- Recommendations: Require explicit environment configuration for production deployments. Fail fast with clear error if credentials not provided. Never use default credentials. Validate connection before proceeding.
+**Pickle File Integrity:**
+- Risk: While restricted_loads prevents RCE, malicious pickle can still corrupt learning data
+- Files: `src/agent/reflection/learning_module.py`
+- Current mitigation: Restricted unpickler blocks dangerous classes, SHA256 integrity checks
+- Recommendations: Migrate to JSON or MessagePack for learning data serialization, add schema validation with Pydantic/Marshmallow
 
 ## Performance Bottlenecks
 
-**Large Monolithic UI File (2446 lines):**
-- Problem: `src/ui/streamlit_app_agent.py` is 2446 lines, making it difficult to test, modify, and reason about
-- Files: `src/ui/streamlit_app_agent.py`
-- Cause: All UI logic (chat, document upload, QA pipeline, manager agent, settings) combined in single file. Complex state management, multiple tabs/modes, extensive conditional rendering
-- Improvement path: Split into feature modules: `chat_interface.py`, `document_upload.py`, `qa_dashboard.py`, `manager_mode.py`. Use composition pattern for UI components. Move business logic to dedicated service layer. Consider component-based architecture.
+**Synchronous Sleep Calls:**
+- Problem: Multiple time.sleep() calls block event loop
+- Files: `src/vector_store_pinecone.py:71`, `src/vector_store.py:149,173`, `src/agent/task_scheduler.py:384`, `src/task_queue/scheduler.py:161`, `src/task_queue/worker.py:127,141`
+- Cause: Polling-based approaches instead of event-driven
+- Improvement path: Replace with asyncio.sleep() for async contexts. Use Redis pub/sub for queue workers instead of polling. Implement exponential backoff with jitter for retries.
 
-**Vector Store Batch Processing with Sleep Delay:**
-- Problem: Creating FAISS index processes in small batches (size=3) with 2-second delays between batches - linear scaling for large document sets
-- Files: `src/vector_store.py:39-82`
-- Cause: Rate limiting to avoid embedding API overload, but delays are hardcoded and not tunable per embedding provider
-- Improvement path: Move batch processing to async queue worker. Make batch size and delay configurable per embedding model. Implement exponential backoff only on actual rate limit errors. Profile embedding latency to set optimal batch size.
+**Vector Store Loading on Every Request:**
+- Problem: FAISS vector store loaded from disk in VectorStoreManager.__init__
+- Files: `src/vector_store.py:32-50`
+- Cause: No application-level caching, only Streamlit session caching
+- Improvement path: Implement LRU cache with TTL for vector store instances. Use mmap for FAISS indices to reduce memory usage. Consider keeping vector store warm in memory.
 
-**Memory Context Built Repeatedly:**
-- Problem: In agent executor, memory context is retrieved and formatted for every tool routing decision, even if conversation hasn't changed
-- Files: `src/agent/agent_executor_v3.py:200-235`
-- Cause: State management doesn't cache memory context; rebuilds formatting on each iteration
-- Improvement path: Cache formatted memory context in state and update only when conversation memory changes. Use hash-based invalidation. Implement LRU cache for frequently accessed contexts.
+**Large Model Loading:**
+- Problem: Reranker model loaded lazily but blocks when first accessed
+- Files: `src/rag_chain.py:20-31` (get_reranker)
+- Cause: Lazy loading with global singleton
+- Improvement path: Pre-load during application startup, use model quantization (4-bit/8-bit) to reduce size, consider model caching service
 
-**Task Queue Polling with Fixed Interval:**
-- Problem: Workers poll Redis queue with fixed 1-second interval regardless of queue depth, wasting CPU when queue is empty
-- Files: `src/task_queue/worker.py:80-150`
-- Cause: Simple polling loop without exponential backoff
-- Improvement path: Implement adaptive polling: check queue every 100ms when backlogged, 5s when empty. Use Redis BLPOP for blocking pop instead of polling. Add queue depth metrics.
+**Database Connection Pool Exhaustion:**
+- Problem: PostgresBackend creates 20 max connections but no queue/timeout
+- Files: `src/database/postgres_backend.py:73-77`
+- Cause: SimpleConnectionPool doesn't queue waiting requests
+- Improvement path: Add connection timeout and queue size limits. Implement circuit breaker pattern. Monitor pool usage metrics. Consider pgbouncer for connection pooling.
 
-**Reflection Module Writes All Data to Disk on Every Update:**
-- Problem: `LearningModule._save_data()` serializes entire learning state (tool metrics, patterns, errors) with every reflection, creating I/O overhead
-- Files: `src/agent/reflection/learning_module.py:88-105`
-- Cause: No batching or debouncing of writes
-- Improvement path: Batch writes - flush to disk every N reflections or every T seconds. Use append-only log for write amplification reduction. Consider in-memory cache with periodic sync. Add write rate limiting.
+**Streamlit Rerun Cascade:**
+- Problem: State changes trigger full page reruns, reloading heavy components
+- Files: `src/ui/streamlit_app_agent.py` (2411 lines)
+- Cause: Streamlit's reactive model + large single-file app
+- Improvement path: Use st.fragment() to isolate expensive operations. Cache component rendering with @st.cache_data. Move to FastAPI + React for more control.
+
+**Redis Pub/Sub Threading:**
+- Problem: Redis pub/sub runs in thread with 0.1s sleep poll interval
+- Files: `src/task_queue/task_queue.py:460`
+- Cause: Synchronous Redis client in threaded mode
+- Improvement path: Use redis-py async client with asyncio. Implement proper event-driven message handling. Add backpressure handling.
+
+**Retry Backoff Without Jitter:**
+- Problem: Exponential backoff in vector store doesn't use jitter
+- Files: `src/vector_store.py:149,173`
+- Cause: Fixed delay calculation can cause thundering herd
+- Improvement path: Add random jitter (0-25% of delay). Use decorators from tenacity library. Implement circuit breaker for repeated failures.
 
 ## Fragile Areas
 
-**Memory Persistence Across Multiple Storage Backends:**
-- Files: `src/agent/memory/`, `src/database/postgres_backend.py`, `data/` directories
-- Why fragile: Conversation memory stored in JSON (episodic), checkpoint recovery in PostgreSQL, learning data in pickle. Different backends can get out of sync if app crashes during write. No transaction boundaries across stores.
-- Safe modification: Always modify episodic memory and checkpoint data together in same transaction. Add state version numbers to detect inconsistencies. Test backup/restore scenarios. Document data flow between stores.
-- Test coverage: Missing integration tests for multi-store consistency. No chaos tests for power failure during writes.
+**Web Agent Tool Playwright Lifecycle:**
+- Files: `src/agent/tools/web_agent_tool.py`
+- Why fragile: Browser context management across async operations, timeout handling, memory leaks if browser not closed
+- Safe modification: Always use async context managers for browser/page. Add explicit cleanup in finally blocks. Test with network delays.
+- Test coverage: Integration tests exist in `tests/integration/test_agent_system.py` but no specific Playwright failure scenarios
 
-**Policy Engine Integration with Tool Execution:**
-- Files: `src/agent/agent_executor_v3.py:282-311`, `src/policy/policy_engine.py`
-- Why fragile: Policy decisions embedded in tool execution loop. If policy check fails, continues execution (fail-open). No audit trail of policy violations. Policies stored in YAML but not validated at startup.
-- Safe modification: Wrap policy evaluation in try-catch with proper logging. Fail-closed for critical policies (code execution). Add policy schema validation. Test policy evaluation doesn't deadlock or timeout.
-- Test coverage: Limited coverage of policy violation scenarios. Missing tests for edge cases (missing policies, malformed rules).
+**Policy Engine Regex Timeout:**
+- Files: `src/policy/policy_engine.py:748`
+- Why fragile: Regex timeout handler catches and ignores errors silently
+- Safe modification: Add observability metrics for timeout events. Log patterns that timeout. Test with known pathological patterns (nested quantifiers).
+- Test coverage: No tests for ReDoS scenarios
 
-**Web Agent Playwright Browser Lifecycle:**
-- Files: `src/agent/tools/web_agent_tool.py:150-250`
-- Why fragile: Single browser instance shared across concurrent tool executions. No timeout enforcement per page load. Memory leak if pages not closed properly. Network errors during navigation can leave browser in bad state.
-- Safe modification: Use browser pool with page lifecycle management. Set page load timeout explicitly. Implement page close/reset in finally blocks. Add browser health checks.
-- Test coverage: No tests for concurrent access. Missing tests for network failures and timeout scenarios.
+**Checkpoint Recovery:**
+- Files: `src/agent/agent_executor_v3.py:82-89`, `src/database/checkpoint_backend.py`
+- Why fragile: Complex state restoration logic, depends on PostgreSQL being available
+- Safe modification: Always validate checkpoint data before restoration. Add checkpoint version numbers. Test with corrupted/partial checkpoints.
+- Test coverage: Integration tests in `tests/integration/test_critical_fixes.py` cover basic scenarios
 
-**Confluence API Integration with Pagination:**
-- Files: `src/confluence_loader.py:100-200`
-- Why fragile: Pagination not fully implemented for large spaces (>1000 pages). Network timeouts during multi-page fetch leave loader in inconsistent state. No retry logic for transient API errors.
-- Safe modification: Implement full pagination with offset tracking. Add exponential backoff for API errors. Store checkpoint of last fetched page for resumability. Validate API responses before processing.
-- Test coverage: No tests with large page counts. Missing tests for API rate limits and authentication failures.
+**Memory Manager State Synchronization:**
+- Files: `src/agent/agent_executor_v3.py:68-77`, `src/agent/memory/conversation_memory.py`, `src/agent/memory/episodic_memory.py`
+- Why fragile: Multiple memory stores (conversation, episodic) must stay in sync
+- Safe modification: Use transaction-like pattern for memory updates. Add consistency checks. Test with concurrent access patterns.
+- Test coverage: Unit tests exist but limited concurrency testing
 
-**Auto Indexer Document Deduplication:**
-- Files: `src/auto_indexer.py`, `src/document_manager.py`
-- Why fragile: New documents checked against existing only by filename, not content. Identical documents re-indexed wasting compute. Index metadata stored in JSON episodic memory without consistency checks.
-- Safe modification: Add content-based deduplication (hash of file content). Store document version info with checksums. Implement idempotent indexing operations. Add validation that index metadata matches actual vector store.
-- Test coverage: No tests for duplicate document handling. Missing tests for index recovery after corruption.
+**Vector Store Integrity Verification:**
+- Files: `src/vector_store.py:35-50,66-91`
+- Why fragile: Checksum verification can fail silently if .sha256 file missing
+- Safe modification: Make checksum file required for production. Add recovery workflow for verification failures. Test with corrupted indices.
+- Test coverage: Tests in `tests/test_bug_fixes.py` cover integrity checks
+
+**Auto-indexer File Hashing:**
+- Files: `src/auto_indexer.py:58-64`
+- Why fragile: Uses MD5 for file change detection (fast but collision risk)
+- Safe modification: Switch to SHA256 for production use. Add size + mtime checks as first-pass filter. Test with identical-hash files.
+- Test coverage: Integration tests in `tests/integration/test_auto_index.py`
 
 ## Scaling Limits
 
 **FAISS In-Memory Vector Store:**
-- Current capacity: ~100k documents (depends on embedding dimension and available RAM). Production uses 384-dim embeddings, ~1.5GB per 100k documents
-- Limit: App crashes or becomes unresponsive when loading >500k documents into memory
-- Scaling path: Migrate to Pinecone (already supported via `USE_PINECONE=true`). Add sharding logic if keeping FAISS. Implement periodic archive/purge of old documents. Monitor memory usage with alerting.
+- Current capacity: Depends on available RAM, ~1M vectors for 768-dim embeddings = ~3GB
+- Limit: Single-machine memory, no sharding
+- Scaling path: Migrate to Pinecone (cloud vector DB), or use FAISS IVF indices with disk-backed storage, or implement distributed FAISS with Ray
 
-**PostgreSQL Connection Pool (3-20 connections):**
-- Current capacity: ~20 concurrent database operations before queue buildup
-- Limit: Connection exhaustion causes stalled queries and timeouts under heavy load
-- Scaling path: Increase pool size based on load testing. Implement read replicas for read-heavy workloads. Use connection pooling proxy (PgBouncer). Monitor pool utilization metrics.
+**SQLite Session Storage:**
+- Current capacity: Default session backend is SQLite (file-based)
+- Limit: Single writer, no concurrent updates, file locking issues on NFS
+- Scaling path: Already has PostgreSQL backend (`src/database/postgres_backend.py`). Enable USE_POSTGRES=true in production.
 
-**Redis Task Queue Single Instance:**
-- Current capacity: Handles ~100 tasks/second on moderate hardware
-- Limit: Single Redis instance becomes bottleneck; no replication or failover
-- Scaling path: Implement Redis cluster or Sentinel for high availability. Use Redis Streams for more reliable message delivery. Consider message broker alternative (RabbitMQ, AWS SQS) for enterprise deployments.
+**Redis Single-Instance Queue:**
+- Current capacity: Single Redis instance for task queue
+- Limit: No high availability, limited by single-node throughput (~10k ops/sec)
+- Scaling path: Use Redis Cluster or Sentinel for HA. Consider Celery with RabbitMQ for complex workflows. Add queue partitioning by task type.
 
-**LLM Token Budget (2048 max tokens):**
-- Current capacity: ~1500 tokens for response in 4k context window
-- Limit: Large documents or long conversations exceed budget, causing truncation
-- Scaling path: Implement prompt compression (summarize old messages). Use longer context models (e.g., 32k models). Implement adaptive token budgets per query type. Archive old conversations.
+**Streamlit Single-Process Limitation:**
+- Current capacity: One Python process per user session
+- Limit: Can't scale horizontally with built-in Streamlit server
+- Scaling path: Deploy with Streamlit Cloud (managed scaling), or migrate to FastAPI + websockets + Redis pub/sub for distributed architecture
+
+**LLM API Rate Limits:**
+- Current capacity: Groq free tier has rate limits (not specified in code)
+- Limit: No request queuing or throttling at application level
+- Scaling path: Implement request queue with priority. Add multiple API key rotation. Use policy engine rate limiting (`src/policy/policy_engine.py`). Cache LLM responses.
+
+**Thread Pool Executor:**
+- Current capacity: PostgresBackend uses 3 worker threads for async DB writes
+- Limit: Fixed pool size, no dynamic scaling
+- Scaling path: Use dynamic thread pool (ThreadPoolExecutor with max_workers=None). Migrate to asyncio with connection pooling. Monitor queue depth.
 
 ## Dependencies at Risk
 
-**Playwright (Web Scraping):**
-- Risk: Playwright 1.x may have breaking API changes in 2.x. Browser binary compatibility issues across platforms.
-- Impact: Web agent stops working if Playwright major version required. Browser crashes during updates.
-- Migration plan: Pin Playwright to v1.x with explicit version. Test browser compatibility in CI across macOS/Linux/Windows. Implement fallback to requests/BeautifulSoup for simple HTML scraping.
+**Python 3.14 Compatibility:**
+- Risk: Running on Python 3.14 with dependencies built for 3.9-3.12
+- Impact: Potential binary incompatibilities, deprecated API usage
+- Migration plan: Freeze Python version to 3.11 or 3.12 for stability. Update requirements.txt with version constraints. Test all dependencies on target Python version.
 
-**FAISS (Vector Store):**
-- Risk: FAISS library sometimes incompatible with newer NumPy/PyTorch versions. Performance regressions in updates.
-- Impact: Vector store fails to load or becomes slow after dependency updates. Migration effort if switching vector stores.
-- Migration plan: Already have Pinecone as alternative via `USE_PINECONE`. Document FAISS compatibility matrix. Pin FAISS version and test updates before deploying.
+**LangChain Version Pinning:**
+- Risk: Using `>=` version constraints for core dependencies (langchain-core>=0.1.0)
+- Impact: Breaking API changes in minor/patch versions
+- Migration plan: Pin exact versions after testing (`langchain-core==0.1.52`). Use dependabot for controlled updates. Add integration tests for LangChain upgrades.
 
-**LangChain (Agent Framework):**
-- Risk: LangChain API evolving rapidly; frequent deprecations. Custom tool integration may break between versions.
-- Impact: Tools stop working after LangChain update. Tool API contract changes require code rewrites.
-- Migration plan: Pin LangChain to stable 0.1.x. Monitor changelog for breaking changes. Implement abstraction layer for LangChain calls (LangGraphAdapter pattern). Have fallback to pure OpenAI SDK.
+**Pinecone Client v3:**
+- Risk: Major version bump to pinecone-client>=3.0.0
+- Impact: Potential API changes from v2
+- Migration plan: Check migration guide, update code in `src/vector_store_pinecone.py`, add feature flags for gradual rollout
 
-**Psycopg2 (PostgreSQL Driver):**
-- Risk: Python 3.14+ may deprecate certain standard library features psycopg2 depends on.
-- Impact: Database connection failures on newer Python versions.
-- Migration plan: Migrate to psycopg 3.x (actively maintained). Test against Python 3.13+ regularly. Have SQLAlchemy as abstraction layer.
+**Playwright Browser Binaries:**
+- Risk: Requires external browser binaries (Chromium/Firefox) installed separately
+- Impact: Deployment complexity, binary size (~300MB), potential version mismatches
+- Migration plan: Use playwright install in Dockerfile. Pin playwright version. Consider lightweight alternatives (requests + BeautifulSoup) for simple scraping.
+
+**Psycopg2 vs Psycopg3:**
+- Risk: Using both psycopg2-binary (v2) and psycopg[binary] (v3) in requirements.txt
+- Impact: Conflicts, confusion about which to use
+- Migration plan: Standardize on psycopg3 for new code. Update PostgresBackend to use psycopg3 API. Test thoroughly with connection pooling.
 
 ## Missing Critical Features
 
-**No Authentication/Authorization Layer:**
-- Problem: No user login, sessions are identified by connection only. Any two browser tabs share session state.
-- Blocks: Multi-user deployments, audit trails, role-based feature access (admin vs. user), billing/usage tracking per user
+**Distributed Tracing:**
+- Problem: OpenTelemetry configured but not fully instrumented
+- Blocks: Debugging performance issues across agent tools, tracking request flow through RAG pipeline
+- Files: `src/observability.py` has infrastructure but limited span creation
 
-**No Conversation Persistence UI:**
-- Problem: Conversations lost on page refresh; no way to save, share, or restore previous chats
-- Blocks: Enterprise use cases requiring conversation history, compliance auditing, team collaboration
+**Authentication/Authorization:**
+- Problem: No user authentication in Streamlit UI
+- Blocks: Multi-tenant deployments, per-user rate limiting, audit logging
+- Recommendation: Add streamlit-authenticator or migrate to FastAPI with OAuth2
 
-**No Document Versioning/Audit Trail:**
-- Problem: Documents replaced without tracking what changed, who changed it, when
-- Blocks: Regulatory compliance, troubleshooting stale data, reverting bad document updates
+**API Rate Limit Handling:**
+- Problem: No retry logic with exponential backoff for LLM API calls
+- Blocks: Reliability during peak usage, handling transient failures
+- Files: `src/rag_chain.py` calls LLM directly without retry wrapper
 
-**No Real-Time Collaboration:**
-- Problem: Only single user can interact with agent at once; no multi-user workspace
-- Blocks: Team QA planning, shared document review, real-time feedback
+**Vector Store Backup/Recovery:**
+- Problem: No automated backup for FAISS indices or Pinecone data
+- Blocks: Disaster recovery, rollback after bad indexing
+- Recommendation: Add scheduled backup script in `scripts/maintenance/`. Store checksums and metadata with backups.
+
+**Health Check Endpoints:**
+- Problem: No /health or /ready endpoints for Kubernetes/load balancers
+- Blocks: Proper container orchestration, zero-downtime deployments
+- Recommendation: Add FastAPI sidecar or Streamlit custom component for health checks
+
+**Graceful Shutdown:**
+- Problem: No signal handlers for SIGTERM, may lose in-flight tasks
+- Blocks: Safe rolling deployments, data loss prevention
+- Files: `queue_worker.py`, `src/task_queue/worker.py` need shutdown handlers
 
 ## Test Coverage Gaps
 
-**Agent Tool Execution under Failure Conditions:**
-- What's not tested: Network timeouts, API rate limits, partial tool failures (e.g., web agent gets 404)
-- Files: `src/agent/agent_executor_v3.py:266-450`, `src/agent/tools/`
-- Risk: Silent failures, infinite retries, or undefined behavior when tools fail. Agent gets stuck in error state.
-- Priority: High - tool failures are common in production
+**Policy Engine Edge Cases:**
+- What's not tested: Concurrent policy evaluations, policy conflicts (allow + deny), rate limit persistence recovery
+- Files: `src/policy/policy_engine.py`
+- Risk: Policy bypasses, incorrect rate limiting in production
+- Priority: High (security-critical)
 
-**Memory System Consistency Across Crashes:**
-- What's not tested: Data integrity after app crash during write to PostgreSQL, episodic memory JSON, or learning pickle
-- Files: `src/agent/memory/`, `src/database/postgres_backend.py`, `src/agent/reflection/learning_module.py`
-- Risk: Orphaned data, duplicate episodes, learning data corruption. Memory state becomes unusable.
-- Priority: High - affects reliability in production
+**Web Agent Network Failures:**
+- What's not tested: DNS failures, connection timeouts, partial page loads, Playwright crash recovery
+- Files: `src/agent/tools/web_agent_tool.py`
+- Risk: Agent hangs or crashes on network issues
+- Priority: High (reliability-critical)
 
-**Policy Engine Enforcement:**
-- What's not tested: Policy violations are detected but not always enforced (fail-open default). Edge cases like policy file missing or malformed.
-- Files: `src/policy/policy_engine.py`, `src/agent/agent_executor_v3.py:282-311`
-- Risk: Dangerous tools (code executor) executed when policy engine fails. No audit of decisions.
-- Priority: Critical for security-sensitive deployments
+**Memory Manager Concurrency:**
+- What's not tested: Race conditions between conversation and episodic memory, checkpoint save during memory update
+- Files: `src/agent/memory/conversation_memory.py`, `src/agent/memory/episodic_memory.py`
+- Risk: Memory corruption, lost context
+- Priority: Medium
 
-**Document Auto-Indexing Edge Cases:**
-- What's not tested: Concurrent uploads of same document, uploading corrupted PDFs, network failure mid-upload, storage full conditions
-- Files: `src/auto_indexer.py`, `src/ui/auto_index_integration.py`
-- Risk: Partial indexing, duplicate documents, stalled indexing tasks, confusing error messages
-- Priority: Medium - affects user experience on upload
+**Vector Store Failover:**
+- What's not tested: Behavior when Pinecone API unavailable, fallback to FAISS, partial indexing failure recovery
+- Files: `src/vector_store_pinecone.py`, `src/vector_store.py`
+- Risk: Application unavailable on vector store failure
+- Priority: High (availability-critical)
 
-**Confluence Loader with Large Spaces:**
-- What's not tested: Spaces with 1000+ pages, API rate limiting during fetch, network interruption during pagination
-- Files: `src/confluence_loader.py`
-- Risk: Loader hangs or times out. Partial document set imported. No clear error message.
-- Priority: Medium - blocks enterprise integrations
+**Code Executor Escapes:**
+- What's not tested: Resource exhaustion attacks (memory bombs, infinite loops with yield), bytecode manipulation
+- Files: `src/agent/tools/code_executor_tool.py`
+- Risk: DoS attacks, sandbox escape
+- Priority: High (security-critical)
 
-**Multi-Agent Orchestration Failure:**
-- What's not tested: Manager agent when specialized agents fail, task scheduler with deadlocks, memory consistency across agents
-- Files: `src/agent/manager_agent.py`, `src/agent/task_scheduler.py`, `src/agent/manager_memory.py`
-- Risk: Manager agent hangs, agents enter deadlock, tasks dropped silently
-- Priority: High - critical flow for QA automation
+**Streamlit State Race Conditions:**
+- What's not tested: Concurrent user actions triggering multiple rebuilds, cache invalidation during active query
+- Files: `src/ui/state_manager.py`, `src/ui/streamlit_app_agent.py`
+- Risk: Corrupted state, app crashes
+- Priority: Medium
+
+**PostgreSQL Connection Pool Exhaustion:**
+- What's not tested: Behavior when all 20 connections in use, deadlock scenarios, long-running transactions
+- Files: `src/database/postgres_backend.py`
+- Risk: App hangs waiting for connections
+- Priority: Medium
+
+**Redis Queue Message Loss:**
+- What's not tested: Redis connection drops mid-task, message expiry, dead letter queue processing
+- Files: `src/task_queue/task_queue.py`
+- Risk: Lost tasks, duplicate processing
+- Priority: Medium
+
+**Agent Timeout Recovery:**
+- What's not tested: Agent exceeds AGENT_TIMEOUT during reflection, checkpoint recovery after timeout
+- Files: `src/agent/agent_executor_v3.py`
+- Risk: Hung agents consuming resources
+- Priority: Medium
 
 ---
 
