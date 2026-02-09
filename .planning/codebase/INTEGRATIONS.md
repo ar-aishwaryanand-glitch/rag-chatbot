@@ -5,263 +5,197 @@
 ## APIs & External Services
 
 **LLM Providers:**
-- Groq (Primary LLM)
-  - What it's used for: Fast inference with open-source models (default: llama-3.3-70b-versatile)
-  - SDK/Client: `langchain-groq` (`langchain-groq>=0.1.0`)
-  - Auth: `GROQ_API_KEY` env var
-  - Config: `src/config.py` lines 15-22 (GROQ_API_KEY, GROQ_MODEL, LLM_PROVIDER)
-  - Implementation: `src/rag_chain.py` lines 182-195 (ChatGroq initialization)
+- Groq - Primary LLM provider for agent inference
+  - SDK/Client: `groq>=0.4.0`, `langchain-groq>=0.1.0`
+  - Auth: `GROQ_API_KEY`
+  - Model: `llama-3.3-70b-versatile` (default)
+  - Config: `src/config.py` lines 15-22, `src/rag_chain.py` lines 182-203
 
-- Google Gemini (Fallback LLM)
-  - What it's used for: Alternative LLM provider when Groq unavailable
-  - SDK/Client: `langchain-google-genai` (`langchain-google-genai>=0.1.0`)
-  - Auth: `GOOGLE_API_KEY` env var
-  - Config: `src/config.py` lines 24-25 (GEMINI_MODEL, GOOGLE_API_KEY)
-  - Implementation: `src/rag_chain.py` lines 204-207 (ChatGoogleGenerativeAI initialization)
+- Google Gemini - Alternative LLM provider (fallback)
+  - SDK/Client: `langchain-google-genai>=0.1.0`
+  - Auth: `GOOGLE_API_KEY`
+  - Model: `gemini-2.0-flash-exp` (default)
+  - Config: `src/config.py` lines 24-25, `src/rag_chain.py` lines 205-213
 
-**Web Search APIs:**
-- DuckDuckGo (Free, No Auth)
-  - What it's used for: Web search results and current information retrieval
-  - SDK/Client: `duckduckgo-search>=3.8.0` (DDGS library)
-  - Auth: None (free service)
-  - Implementation: `src/agent/tools/web_search_tool.py` lines 154-161 (DDGS() client usage)
-  - Rate limiting: 10 searches/minute (built-in throttling)
-  - Features: Relevance filtering, deduplication, artifact cleaning
+**Embedding Providers:**
+- HuggingFace - Primary embedding provider (local)
+  - SDK/Client: `langchain-huggingface>=0.0.1`, `sentence-transformers>=2.2.0`
+  - Model: `sentence-transformers/all-MiniLM-L6-v2` (default)
+  - Implementation: `src/embeddings.py` lines 19-37
 
-- Tavily (Optional, Paid)
-  - What it's used for: Premium web search integration
-  - Auth: `TAVILY_API_KEY` env var
-  - Config: `src/config.py` line 85 (WEB_SEARCH_PROVIDER setting)
-  - Status: Optional, fallback support
+- Google Embeddings - Alternative provider
+  - SDK/Client: `langchain-google-genai`
+  - Auth: `GOOGLE_API_KEY`
+  - Model: `models/embedding-001`
+  - Implementation: `src/embeddings.py` lines 39-44
 
-- NewsAPI (Optional, Paid)
-  - What it's used for: Latest news articles and news search
+**Web Search:**
+- DuckDuckGo - Free web search (no API key required)
+  - SDK/Client: `duckduckgo-search>=3.8.0`
+  - Implementation: `src/agent/tools/web_search_tool.py`
+  - Rate limit: 10 searches/minute (configurable)
+
+- Tavily - Enhanced web search (optional)
+  - Auth: `TAVILY_API_KEY`
+  - Config: `src/config.py` line 85
+
+- NewsAPI - News article search
   - SDK/Client: `newsapi-python>=0.2.7`
-  - Auth: `NEWSAPI_KEY` env var
+  - Auth: `NEWSAPI_KEY`
   - Free tier: 100 requests/day
-  - Implementation: `src/agent/tools/news_api_tool.py` lines 21-24, 69-78
-  - Fallback: Google News RSS feeds via `feedparser>=6.0.10`
+  - Implementation: `src/agent/tools/news_api_tool.py` lines 21-23
 
-**Confluence Integration (Optional):**
-- Atlassian Confluence
-  - What it's used for: Document import from Confluence spaces
-  - SDK/Client: HTTP API via `requests` (no official SDK)
-  - Auth: Basic Auth (email + API token) or Bearer token
-  - Config: `src/config.py` lines 126-130 (CONFLUENCE_ENABLED, CONFLUENCE_URL, CONFLUENCE_USERNAME, CONFLUENCE_API_TOKEN, CONFLUENCE_SPACE_KEY)
-  - Implementation: `src/confluence_loader.py` lines 29-100+
-  - API endpoints:
-    - Space content: `/rest/api/content?spaceKey={SPACE_KEY}`
-    - Page search: `/rest/api/content/search` (CQL queries)
-    - Page content: `/rest/api/content/{pageId}` (with body expansion)
-  - Authentication: Detects Confluence Server vs Cloud, uses appropriate auth method
+- Google News RSS - Fallback news source
+  - SDK/Client: `feedparser>=6.0.10`
+  - No auth required
+  - Implementation: `src/agent/tools/news_api_tool.py` lines 27-30
+
+**Confluence:**
+- Atlassian Confluence - Document import integration
+  - SDK/Client: `requests` with HTTP Basic Auth
+  - Auth: `CONFLUENCE_USERNAME`, `CONFLUENCE_API_TOKEN`
+  - Config: `CONFLUENCE_URL`, `CONFLUENCE_SPACE_KEY`, `CONFLUENCE_ENABLED`
+  - Implementation: `src/confluence_loader.py`
 
 ## Data Storage
 
 **Databases:**
+- PostgreSQL - Persistent session and checkpoint storage (optional)
+  - Connection: `DATABASE_URL` or individual `POSTGRES_*` vars
+  - Client: `psycopg2-binary>=2.9.0` (sessions), `psycopg[binary]>=3.1.0` (checkpoints)
+  - Schema: `scripts/setup/init_supabase_schema.sql`
+  - Session manager: `src/database/session_manager.py`
+  - Checkpoint backend: `src/database/checkpoint_backend.py` lines 19-21
+  - Models: `src/database/models.py`
+  - Usage: Enabled via `USE_POSTGRES=true` and `USE_CHECKPOINTS=true`
 
-Vector Databases:
-- FAISS (Local, Default)
-  - What it's used for: In-memory vector storage for document embeddings
-  - Client: `faiss-cpu>=1.7.0`
-  - Storage: Local filesystem at `data/vector_store/`
-  - Implementation: `src/vector_store.py` (VectorStoreManager)
-  - When to use: Development, single-instance deployments
-  - Limitation: Not scalable across multiple servers
+- Supabase - Managed PostgreSQL (optional)
+  - Connection: `SUPABASE_URL`, `SUPABASE_KEY`
+  - Compatible with PostgreSQL backend
 
-- Pinecone (Cloud, Optional for Production)
-  - What it's used for: Scalable, cloud-based vector database
-  - Provider: Pinecone (https://app.pinecone.io)
+**Vector Storage:**
+- FAISS - Local vector database (default)
+  - Client: `faiss-cpu>=1.7.0`, `langchain-community`
+  - Storage: `data/vector_store/` directory
+  - Implementation: `src/vector_store.py` lines 8-9
+  - No external service required
+
+- Pinecone - Cloud vector database (optional)
   - SDK/Client: `pinecone-client>=3.0.0`, `langchain-pinecone>=0.0.1`
-  - Auth: `PINECONE_API_KEY` env var
-  - Config: `src/config.py` lines 51-60
-    - `USE_PINECONE`: Enable/disable (default: false)
-    - `PINECONE_INDEX_NAME`: Index name (default: "rag-agent")
-    - `PINECONE_NAMESPACE`: Namespace for isolation (optional)
-    - `PINECONE_METRIC`: Distance metric - cosine, euclidean, dotproduct (default: cosine)
-    - `PINECONE_CLOUD`: Cloud provider - aws, gcp, azure (default: aws)
-    - `PINECONE_REGION`: Serverless region (default: us-east-1)
-  - Implementation: `src/vector_store_pinecone.py` (PineconeVectorStore)
-  - When to use: Production, multi-instance deployments, high availability
-
-**Relational Database - PostgreSQL:**
-- Connection: PostgreSQL 12+ database
-- Purpose: Session storage, agent memory, checkpoint storage
-- Adapter: psycopg2 (session storage) + psycopg3 (checkpoint storage)
-- Config: `src/config.py` lines 104-112
-  - `USE_POSTGRES`: Enable/disable (default: false)
-  - `DATABASE_URL`: Full connection string (preferred)
-  - Alternative: Individual components (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB)
-  - Default connection: localhost:5432, user=postgres, db=rag_chatbot
-- Implementation:
-  - `src/database/postgres_backend.py` - Session and message storage (psycopg2)
-  - `src/database/checkpoint_backend.py` - LangGraph checkpoint storage (psycopg3)
-  - `src/database/session_manager.py` - Session lifecycle management
-  - `src/database/models.py` - Data models (Session, Message, EpisodicMemory)
-
-**Supabase (Cloud PostgreSQL):**
-- What it's used for: Managed PostgreSQL alternative
-- Connection: Via `DATABASE_URL` or Supabase credentials
-- Config: `src/config.py` (commented examples)
-  - `SUPABASE_URL`: Supabase project URL
-  - `SUPABASE_KEY`: Anon key for authentication
-- Implementation: Compatible with psycopg2/psycopg3 backends
+  - Auth: `PINECONE_API_KEY`
+  - Config: `PINECONE_INDEX_NAME`, `PINECONE_NAMESPACE`, `PINECONE_CLOUD`, `PINECONE_REGION`, `PINECONE_METRIC`
+  - Implementation: `src/vector_store_pinecone.py` line 40
+  - Usage: Enabled via `USE_PINECONE=true`
 
 **File Storage:**
-- Local filesystem only - No external file storage service
-- Paths:
+- Local filesystem only
   - Documents: `data/documents/`
   - Vector store: `data/vector_store/`
-  - Memory store: `data/memory_store/`
+  - Memory: `data/memory_store/`
   - Workspace: `data/workspace/`
+  - Episodic memory: `data/episodic_memory/`
 
 **Caching:**
-- Redis (Optional, for distributed caching and task queue)
-  - What it's used for: Distributed message queue, caching, and agent coordination
-  - Provider: Redis server 6+
-  - SDK/Client: `redis>=5.0.0`
-  - Auth: `REDIS_URL` env var (format: redis://[user:password@]host:port/db)
-  - Config: `src/config.py` lines 117-123
-    - `USE_REDIS_QUEUE`: Enable/disable (default: false)
-    - `REDIS_URL`: Connection string
-    - `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`: Individual components
-  - Implementation: `src/task_queue/task_queue.py` (TaskQueue with Redis backend)
-  - Features: Priority queues, task status tracking, pub/sub notifications, dead letter queue
+- Redis - Distributed task queue and coordination (optional)
+  - Client: `redis>=5.0.0`
+  - Connection: `REDIS_URL` or individual `REDIS_*` vars
+  - Implementation: `src/task_queue/task_queue.py` line 18
+  - Usage: Enabled via `USE_REDIS_QUEUE=true`
 
 ## Authentication & Identity
 
-**Auth Providers:**
-- None - Custom authentication via API keys in environment variables
-- All authentication is key-based:
-  - LLM provider keys (Groq, Google)
-  - External service keys (Tavily, NewsAPI, Confluence)
-  - Database credentials (PostgreSQL connection strings)
-
-**API Key Management:**
-- Via `.env` file (development)
-- Via environment variables (production)
-- No OAuth2 or OIDC integration currently
+**Auth Provider:**
+- None - No built-in authentication system
+  - Implementation: Application-level auth not implemented
+  - API keys managed via environment variables
+  - Streamlit secrets: `.streamlit/secrets.toml` (for deployment)
 
 ## Monitoring & Observability
 
-**Distributed Tracing:**
-- OpenTelemetry Framework
-  - SDK: `opentelemetry-api>=1.20.0`, `opentelemetry-sdk>=1.20.0`
-  - Config: `src/config.py` lines 134-156
-  - Implementation: `src/observability.py` (ObservabilityManager singleton)
-
-**Exporters:**
-- Console Exporter (Development)
-  - Exports to stdout for debugging
-  - Config: `OTEL_EXPORTER_TYPE=console`
-
-- OTLP Exporter (Production)
-  - Exports to OTLP gRPC endpoint
-  - SDK: `opentelemetry-exporter-otlp>=1.20.0`
-  - Config:
-    - `OTEL_EXPORTER_TYPE=otlp`
-    - `OTEL_EXPORTER_ENDPOINT`: gRPC endpoint (default: http://localhost:4317)
-    - `OTEL_EXPORTER_HEADERS`: Optional auth headers
-  - Compatible with: Jaeger, Honeycomb, Datadog, New Relic
-
-- Jaeger Exporter (Optional)
-  - Direct Jaeger integration
-  - SDK: `opentelemetry-exporter-jaeger>=1.20.0`
-  - Config:
-    - `OTEL_EXPORTER_TYPE=jaeger`
-    - `JAEGER_HOST`, `JAEGER_PORT` (default: localhost:6831)
-
-**Instrumentation:**
-- Tracing coverage: `src/config.py` lines 148-152
-  - `TRACE_RAG_OPERATIONS`: RAG retrieval and generation
-  - `TRACE_AGENT_OPERATIONS`: Agent execution steps
-  - `TRACE_TOOL_CALLS`: Tool invocations
-  - `TRACE_LLM_CALLS`: LLM API calls
-
-- Metrics collection: `src/config.py` lines 154-156
-  - `COLLECT_METRICS`: Enable/disable metrics
-  - `METRIC_EXPORT_INTERVAL`: Export frequency (default: 60 seconds)
-
 **Error Tracking:**
-- None - Errors logged to console/stdout only
-- Recommendation: Configure OTLP exporter for production error tracking
+- None - No dedicated error tracking service
 
 **Logs:**
-- Approach: Console logging via Python print statements
-- Observability module: `src/observability.py` provides structured logging with OpenTelemetry
+- Console logging via Python `print()` statements
+- Observability framework: `src/observability.py`
+
+**Tracing:**
+- OpenTelemetry - Distributed tracing (optional)
+  - SDK: `opentelemetry-api>=1.20.0`, `opentelemetry-sdk>=1.20.0`
+  - Exporters: Console (dev), OTLP (prod), Jaeger (optional)
+  - Config: `ENABLE_OBSERVABILITY`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_TYPE`, `OTEL_EXPORTER_ENDPOINT`
+  - Implementation: `src/observability.py` lines 17-29
+  - Traces: RAG operations, agent operations, tool calls, LLM calls
+  - Usage: Enabled via `ENABLE_OBSERVABILITY=true`
+
+**Metrics:**
+- OpenTelemetry Metrics - Performance metrics (optional)
+  - Exporters: Console (dev), OTLP (prod)
+  - Config: `COLLECT_METRICS=true`, `METRIC_EXPORT_INTERVAL` (seconds)
+  - Metrics tracked: retrieval latency, generation latency, query duration, errors
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Not specified in codebase - Flexible deployment
-- Compatible with:
-  - Streamlit Cloud (native support)
-  - Docker containers
-  - Traditional VMs/servers
-  - Serverless platforms (with modifications)
+- Railway.app - Primary deployment target
+  - Config: `railway.json`
+  - Port: Dynamic via `$PORT` env var
+  - Health check: `/_stcore/health`
+
+- Render.com - Alternative deployment target
+  - Config: `render.yaml`
+  - Docker-based deployment
+  - Free tier compatible
+
+- Docker - Containerized deployment
+  - Image: `python:3.11-slim`
+  - Port: 8503 (exposed)
+  - Health check: `/_stcore/health` endpoint
 
 **CI Pipeline:**
-- Not configured - Manual testing via pytest and Makefile
-
-**Test Framework:**
-- pytest (executed via `make test` or `make test-quick`)
-- Test location: `tests/` directory structure
+- None - No GitHub Actions or CI workflows configured
 
 ## Environment Configuration
 
-**Required env vars for startup:**
-- `GROQ_API_KEY` - Required for LLM (unless using Google)
-- `GOOGLE_API_KEY` - Required if using Google Gemini
-- `.env` file must be created from `.env.example`
+**Required env vars:**
+- `GROQ_API_KEY` - Groq LLM API key (critical)
 
-**Recommended for full functionality:**
-- `USE_POSTGRES=true` + `DATABASE_URL` - Session persistence
-- `USE_PINECONE=true` + `PINECONE_API_KEY` - Production vector DB
-- `ENABLE_OBSERVABILITY=true` + `OTEL_EXPORTER_*` - Monitoring
-- `CONFLUENCE_ENABLED=true` + Confluence credentials - Document import
+**Optional env vars (features):**
+- `PINECONE_API_KEY` - Cloud vector storage
+- `DATABASE_URL` - PostgreSQL connection string
+- `REDIS_URL` - Redis message queue
+- `TAVILY_API_KEY` - Enhanced web search
+- `NEWSAPI_KEY` - News API access
+- `CONFLUENCE_URL`, `CONFLUENCE_USERNAME`, `CONFLUENCE_API_TOKEN`, `CONFLUENCE_SPACE_KEY` - Confluence integration
+- `GOOGLE_API_KEY` - Google Gemini and embeddings
 
-**Optional for enhanced features:**
-- `TAVILY_API_KEY` - Premium web search
-- `NEWSAPI_KEY` - News API integration
-- `USE_REDIS_QUEUE=true` + `REDIS_URL` - Distributed task queue
-- `USE_POLICY_ENGINE=true` - Agent behavior control
+**Optional env vars (observability):**
+- `OTEL_EXPORTER_ENDPOINT` - OpenTelemetry collector endpoint
+- `OTEL_EXPORTER_HEADERS` - OTLP exporter headers (e.g., API keys)
+
+**Feature flags:**
+- `USE_PINECONE` - Enable cloud vector storage (default: false)
+- `USE_POSTGRES` - Enable PostgreSQL backend (default: false)
+- `USE_CHECKPOINTS` - Enable agent checkpointing (default: true)
+- `USE_REDIS_QUEUE` - Enable distributed task queue (default: false)
+- `USE_POLICY_ENGINE` - Enable agent governance (default: true)
+- `ENABLE_OBSERVABILITY` - Enable OpenTelemetry (default: false)
+- `CODE_EXECUTOR_ENABLED` - Enable code execution tool (default: false, security risk)
+- `FILE_OPS_ENABLED` - Enable file operations tool (default: true)
+- `WEB_SEARCH_ENABLED` - Enable web search tool (default: true)
 
 **Secrets location:**
-- `.env` file (gitignored, must be created manually)
-- File format: `KEY=value` pairs
-- Loading: Handled by `src/config.py` via `python-dotenv`
+- Development: `.env` file in project root
+- Production (Railway/Render): Platform-specific env var management
+- Streamlit Cloud: `.streamlit/secrets.toml`
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None currently configured
-- Streamlit provides built-in callback handling for widget interactions
+- None - No webhook endpoints configured
 
 **Outgoing:**
-- Confluence: One-way read-only integration (fetch documents only)
-- NewsAPI: One-way read-only integration (fetch articles only)
-- External LLM/Vector DB: One-way calls (no callbacks)
-
-## Integration Patterns
-
-**Document Ingestion Pipeline:**
-1. Document upload via Streamlit UI (`src/ui/streamlit_app_agent.py`)
-2. Or Confluence fetch via `src/confluence_loader.py`
-3. Chunking: `src/embeddings.py` (RecursiveCharacterTextSplitter)
-4. Embedding: HuggingFace or Google embeddings
-5. Storage: FAISS (local) or Pinecone (cloud)
-
-**Agent Tool Execution:**
-1. Web search: DuckDuckGo or Tavily
-2. News search: NewsAPI or Google News RSS
-3. Web browsing: Playwright + Beautiful Soup
-4. Code execution: RestrictedPython sandbox
-5. All results logged via OpenTelemetry
-
-**Session Persistence:**
-1. Agent state checkpointed to PostgreSQL via LangGraph
-2. Messages stored in PostgreSQL backend
-3. Episodic memory stored in PostgreSQL
-4. Optional Redis queue for distributed agents
+- None - No outbound webhooks configured
 
 ---
 

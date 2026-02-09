@@ -14,162 +14,131 @@
 
 **Run Commands:**
 ```bash
-pytest                          # Run all tests
-pytest -v                       # Verbose output
-pytest tests/unit               # Run only unit tests
-pytest tests/integration        # Run only integration tests
-pytest -m unit                  # Run tests marked @pytest.mark.unit
-pytest -m integration           # Run tests marked @pytest.mark.integration
-pytest --cov=src               # Coverage report
-pytest tests/ -v --tb=short    # Verbose with short traceback
+pytest tests/ -v                # Run all tests with verbose output
+pytest tests/unit/ -v           # Run only unit tests
+pytest tests/integration/ -v    # Run only integration tests
+pytest -m unit                  # Run tests marked as unit
+pytest -m "not slow"            # Skip slow tests
+pytest --cov=src                # Run with coverage report
+make test                       # Via Makefile
+make test-quick                 # Unit tests only (fast)
 ```
-
-**Test Discovery:**
-- Test files: `test_*.py` and `*_test.py`
-- Test classes: `Test*` prefix
-- Test functions: `test_*` prefix
-- All tests located in `tests/` directory
 
 ## Test File Organization
 
 **Location:**
-- Co-located by feature, not mixed: Separate directories for unit and integration tests
-- Structure mirrors source structure: `tests/unit/test_embeddings.py` mirrors `src/embeddings.py`
-- Fixtures in shared `tests/conftest.py` file
-
-**Directory Layout:**
-```
-tests/
-├── conftest.py                  # Shared fixtures and configuration
-├── unit/                        # Fast, isolated unit tests
-│   ├── __init__.py
-│   ├── test_embeddings.py
-│   ├── test_rag_chain_unit.py
-│   ├── test_config.py
-│   ├── test_memory.py
-│   ├── test_tools.py
-│   └── test_vector_store.py
-└── integration/                 # Tests requiring services/APIs
-    ├── __init__.py
-    ├── test_rag_chain.py
-    ├── test_agent_system.py
-    ├── test_manager_agent.py
-    ├── test_qa_tools.py
-    └── test_critical_fixes.py
-```
+- Separate by type: `tests/unit/` for unit tests, `tests/integration/` for integration tests
+- Shared fixtures: `tests/conftest.py` (309 lines, 19+ fixtures)
+- Structure mirrors source: `tests/unit/test_embeddings.py` tests `src/embeddings.py`
 
 **Naming:**
-- `test_<module_name>.py`: Matches source module being tested
-- Suffixes for test type: `_unit.py`, no suffix for integration
-- Classes group related tests: `TestEmbeddingManagerChunking`, `TestRAGChainQuery`
+- Test files: `test_*.py` (e.g., `test_security.py`, `test_tools.py`)
+- Test classes: `Test*` prefix (e.g., `TestToolResult`, `TestConversationMemory`)
+- Test functions: `test_*` prefix (e.g., `test_basic_arithmetic`, `test_initialization`)
+
+**Structure:**
+```
+tests/
+├── conftest.py                  # Shared fixtures (19 fixtures)
+├── __init__.py
+├── test_security.py             # Security validation tests
+├── test_bug_fixes.py            # Regression tests
+├── unit/                        # Unit tests (fast, isolated)
+│   ├── __init__.py
+│   ├── test_embeddings.py       # Chunking, embedding generation
+│   ├── test_rag_chain_unit.py   # RAG chain logic
+│   ├── test_config.py           # Configuration loading
+│   ├── test_memory.py           # Memory management
+│   ├── test_tools.py            # Tool execution
+│   └── test_vector_store.py     # Vector store operations
+└── integration/                 # Integration tests (slower)
+    ├── __init__.py
+    ├── test_rag_chain.py        # End-to-end RAG flow
+    ├── test_agent_system.py     # Agent orchestration
+    ├── test_manager_agent.py    # Manager agent (813 lines)
+    ├── test_qa_tools.py         # QA generation (928 lines)
+    ├── test_qa_generation.py
+    ├── test_relevance_filter.py
+    ├── test_auto_index.py
+    └── test_critical_fixes.py   # System-level fixes
+```
 
 ## Test Structure
 
 **Suite Organization:**
 ```python
-class TestEmbeddingManagerImport:
-    """Tests for EmbeddingManager imports."""
+class TestConversationMemory:
+    """Tests for ConversationMemory class."""
 
-    def test_embedding_manager_import(self):
-        """Test that EmbeddingManager can be imported."""
-        from src.embeddings import EmbeddingManager
-        assert EmbeddingManager is not None
+    def test_initialization(self, conversation_memory):
+        """Test conversation memory initialization."""
+        assert conversation_memory.session_id == "test_session_123"
+        assert conversation_memory.max_messages == 10
+        assert conversation_memory.messages == []
+        assert conversation_memory.turn_count == 0
 
-    def test_cached_embedding_function_import(self):
-        """Test that cached embedding function exists."""
-        from src.embeddings import _get_cached_embedding_model
-        assert _get_cached_embedding_model is not None
-
-
-class TestEmbeddingManagerChunking:
-    """Tests for document chunking functionality."""
-
-    @patch('src.embeddings._get_cached_embedding_model')
-    def test_chunk_documents_basic(self, mock_get_model):
-        """Test basic document chunking."""
-        from src.embeddings import EmbeddingManager
-
-        mock_get_model.return_value = MagicMock()
-        manager = EmbeddingManager()
-        # ... test continues
+    def test_add_user_message(self, conversation_memory):
+        """Test adding a user message."""
+        conversation_memory.add_message("user", "Hello!")
+        assert len(conversation_memory.messages) == 1
+        assert conversation_memory.messages[0].role == "user"
 ```
 
 **Patterns:**
-
-1. **Class grouping:** Tests organized by feature/class, not by test type
-2. **Descriptive test names:** `test_chunk_documents_preserves_metadata` not `test_1`
-3. **One assertion focus per test:** Each test validates single behavior
-4. **AAA pattern (Arrange, Act, Assert):**
-   - Arrange: Set up test data and mocks
-   - Act: Call the function/method being tested
-   - Assert: Verify expected behavior
-
-**Example from `tests/unit/test_embeddings.py`:**
+- Group tests by class/feature area
+- Use descriptive class docstrings: `"""Tests for X functionality."""`
+- One assertion focus per test
+- AAA pattern (Arrange-Act-Assert):
 ```python
-@patch('src.embeddings._get_cached_embedding_model')
-def test_chunk_documents_preserves_metadata(self, mock_get_model):
-    """Test that metadata is preserved during chunking."""
+def test_add_message_with_metadata(self, conversation_memory):
+    """Test adding message with metadata."""
     # Arrange
-    from src.embeddings import EmbeddingManager
-    mock_get_model.return_value = MagicMock()
-    manager = EmbeddingManager()
-    documents = [
-        {
-            "content": "Test content here.",
-            "metadata": {"source": "file.md", "topic": "testing", "author": "test"}
-        }
-    ]
+    metadata = {"tools_used": ["calculator"]}
 
     # Act
-    chunks = manager.chunk_documents(documents)
+    conversation_memory.add_message("assistant", "Result: 42", metadata)
 
     # Assert
-    assert chunks[0].metadata["source"] == "file.md"
-    assert chunks[0].metadata["topic"] == "testing"
-    assert chunks[0].metadata["author"] == "test"
+    assert conversation_memory.messages[0].metadata == metadata
 ```
 
 ## Mocking
 
-**Framework:** `unittest.mock` (Python standard library)
+**Framework:** `unittest.mock` (standard library)
 
 **Patterns:**
 ```python
 from unittest.mock import MagicMock, patch
 
-# Method 1: Direct instantiation with MagicMock
-mock_vector_store = MagicMock()
-mock_vector_store.similarity_search.return_value = []
+# Pattern 1: Direct MagicMock creation
+mock_llm = MagicMock()
+mock_llm.invoke.return_value = MagicMock(content="Mock response")
 
-# Method 2: Decorator-based patching
+# Pattern 2: Decorator-based patching
 @patch('src.embeddings._get_cached_embedding_model')
-def test_method(self, mock_get_model):
+def test_chunk_documents(self, mock_get_model):
     mock_get_model.return_value = MagicMock()
     # test code
 
-# Method 3: Context manager patching
-with patch('src.agent.agent_executor_v3.ChatGroq') as mock_llm_class:
-    mock_llm = MagicMock()
-    mock_llm_class.return_value = mock_llm
+# Pattern 3: Multiple patches
+@patch('src.rag_chain.VectorStoreManager')
+@patch('src.rag_chain.EmbeddingManager')
+def test_rag_chain(self, mock_embed, mock_vs):
     # test code
 ```
 
-**Patch locations:**
-- Patch at import location, not source: `@patch('src.rag_chain.VectorStoreManager')`
-- Avoid patching built-ins unnecessarily
-- Use `patch.dict` for environment variable mocking: `patch.dict('sys.modules', {'module': MagicMock()})`
-
 **What to Mock:**
-- External dependencies: LLMs, vector stores, databases
-- API calls: Web search, Confluence, external services
-- File I/O: Use `temp_dir` fixture instead
-- System features: Time, environment variables
+- LLM providers (Groq, Gemini): Mock `invoke()` method
+- Vector stores: Mock `similarity_search()`, `add_documents()`
+- Database connections: Mock cursor and connection objects
+- External APIs: Web search, Confluence, news APIs
+- File system operations: Use `temp_dir` fixture
 
 **What NOT to Mock:**
-- Classes being tested directly (test the real implementation)
-- Internal helper methods (test through public interface)
-- Data structures and simple utilities
-- Configuration loading (use test config fixture)
+- The class/function under test (test real implementation)
+- Simple data structures (lists, dicts, dataclasses)
+- Configuration objects (use `test_config` fixture)
+- Internal helper methods (test through public API)
 
 **Example from `tests/conftest.py`:**
 ```python
@@ -179,7 +148,6 @@ def mock_llm():
     mock = MagicMock()
     mock.invoke.return_value = MagicMock(content="Mock LLM response")
     return mock
-
 
 @pytest.fixture
 def mock_vector_store():
@@ -193,7 +161,7 @@ def mock_vector_store():
 ## Fixtures and Factories
 
 **Test Data:**
-Fixtures in `tests/conftest.py` provide reusable test objects:
+Located in `tests/conftest.py` (19 fixtures defined):
 
 ```python
 @pytest.fixture
@@ -207,11 +175,10 @@ def sample_documents():
             metadata={"source": "rag-overview.md", "chunk_id": 0}
         ),
         Document(
-            page_content="Vector databases store embeddings for semantic search.",
+            page_content="Vector databases store embeddings.",
             metadata={"source": "vector-databases.md", "chunk_id": 0}
         ),
     ]
-
 
 @pytest.fixture
 def test_config():
@@ -238,16 +205,13 @@ def mock_llm_response():
         return response
     return _create_response
 
-# Usage in test
-def test_something(self, mock_llm_response):
-    response1 = mock_llm_response("First response")
-    response2 = mock_llm_response("Second response")
+# Usage
+def test_something(mock_llm_response):
+    response = mock_llm_response("Custom content")
 ```
 
 **Location:**
-- All shared fixtures in `tests/conftest.py` (19 fixtures defined)
-- Test-specific fixtures in same test file (if not reused)
-- Fixtures organized by category with comment sections:
+- `tests/conftest.py`: All shared fixtures (organized by category with comments)
   - Environment Setup Fixtures
   - Tool Fixtures
   - Memory Fixtures
@@ -260,9 +224,10 @@ def test_something(self, mock_llm_response):
 
 ## Coverage
 
-**Requirements:** Not enforced (no CI check)
+**Requirements:** Not enforced (no minimum threshold)
 
-**Configuration in `pytest.ini`:**
+**Configuration:**
+In `pytest.ini`:
 ```ini
 [coverage:run]
 source = src
@@ -281,45 +246,111 @@ exclude_lines =
 
 **View Coverage:**
 ```bash
-pytest --cov=src --cov-report=html    # Generate HTML report
 pytest --cov=src                      # Terminal report
+pytest --cov=src --cov-report=html    # HTML report
 ```
 
-**Coverage Targets:**
-- UI components excluded from coverage (complex Streamlit integration)
-- Pragmatic coverage: Focus on business logic, not 100% line coverage
+**Coverage Strategy:**
+- UI excluded (complex Streamlit integration)
+- Focus on business logic (RAG chain, agents, tools)
+- Pragmatic approach: Test critical paths, not 100% line coverage
 
 ## Test Types
 
-**Unit Tests (location: `tests/unit/`):**
-- Scope: Single function/method/class in isolation
-- Approach: Mock all external dependencies
+**Unit Tests:**
+- Scope: Single function/class in isolation
+- Location: `tests/unit/`
 - Speed: Fast (< 1 second per test)
+- Dependencies: All external dependencies mocked
 - Examples:
-  - `test_embeddings.py`: EmbeddingManager chunking, embedding generation
-  - `test_config.py`: Config class loading and defaults
-  - `test_memory.py`: Message creation, conversation memory management
-  - `test_tools.py`: Individual tool functionality
-  - `test_vector_store.py`: Vector store operations
+  - `tests/unit/test_tools.py`: Tool result dataclass, BaseTool interface, CalculatorTool logic
+  - `tests/unit/test_memory.py`: Message creation, conversation memory, statistics
+  - `tests/unit/test_embeddings.py`: Chunking, embedding generation
+  - `tests/unit/test_config.py`: Configuration loading
 
-**Integration Tests (location: `tests/integration/`):**
+**Integration Tests:**
 - Scope: Multiple components working together
-- Approach: Use real or semi-mocked dependencies
+- Location: `tests/integration/`
 - Speed: Slower (seconds to minutes)
+- Dependencies: Some real, some mocked
 - Examples:
-  - `test_rag_chain.py`: RAGChain with document retrieval
-  - `test_agent_system.py`: Agent with tools and memory
-  - `test_manager_agent.py`: Manager agent features
-  - `test_qa_tools.py`: QA generation pipeline
-  - `test_critical_fixes.py`: Cross-cutting concerns
+  - `tests/integration/test_rag_chain.py`: RAGChain with retrieval and generation
+  - `tests/integration/test_agent_system.py`: Agent with tools and memory
+  - `tests/integration/test_qa_tools.py`: QA generation pipeline (928 lines)
+  - `tests/integration/test_manager_agent.py`: Manager agent features (813 lines)
 
 **E2E Tests:**
-- Not implemented in current test suite
-- Would require: Full system setup, real API keys, external services
+- Not implemented
+- Would require real API keys, external services, full system
 
-## Markers
+## Common Patterns
 
-**Defined in `pytest.ini`:**
+**Async Testing:**
+Not used (codebase is synchronous)
+
+**Error Testing:**
+```python
+def test_unsupported_provider_raises_error(self):
+    """Test that unsupported provider raises ValueError."""
+    from src.embeddings import _get_cached_embedding_model
+
+    with pytest.raises(ValueError) as exc_info:
+        _get_cached_embedding_model("unsupported", "model")
+
+    assert "Unsupported embedding provider" in str(exc_info.value)
+```
+
+**State Verification:**
+```python
+def test_add_user_message(self, conversation_memory):
+    """Test adding a user message."""
+    conversation_memory.add_message("user", "Hello!")
+    assert len(conversation_memory.messages) == 1
+    assert conversation_memory.messages[0].role == "user"
+    assert conversation_memory.turn_count == 1
+```
+
+**Import Testing:**
+```python
+def test_embedding_manager_import(self):
+    """Test that EmbeddingManager can be imported."""
+    from src.embeddings import EmbeddingManager
+    assert EmbeddingManager is not None
+```
+
+**Parametrized-style Testing:**
+```python
+def test_query_sanitization(self):
+    """Test that queries are properly sanitized."""
+    test_queries = [
+        "What is RAG?",
+        "  Leading whitespace  ",
+        "Query with\nnewlines",
+        "",
+    ]
+
+    for query in test_queries:
+        sanitized = query.strip()
+        assert isinstance(sanitized, str)
+```
+
+**Context Formatting:**
+```python
+def test_context_formatting(self, sample_documents):
+    """Test that documents are formatted correctly for context."""
+    context_parts = []
+    for doc in sample_documents:
+        source = doc.metadata.get("source", "Unknown")
+        context_parts.append(f"[Source: {source}]\n{doc.page_content}")
+
+    context = "\n\n".join(context_parts)
+    assert "rag-overview.md" in context
+    assert "[Source:" in context
+```
+
+## Markers and Skip Conditions
+
+**Defined Markers (in `pytest.ini`):**
 ```ini
 markers =
     unit: Unit tests (fast, no external dependencies)
@@ -330,20 +361,7 @@ markers =
     requires_api: Tests requiring external API keys
 ```
 
-**Usage:**
-```python
-@pytest.mark.slow
-@pytest.mark.requires_api
-def test_llm_call():
-    """Test that calls actual LLM."""
-    pass
-
-# Run specific marker
-pytest -m "not slow"              # Skip slow tests
-pytest -m "requires_api"          # Run only tests needing APIs
-```
-
-**Skip Markers (defined in `conftest.py`):**
+**Skip Markers (in `tests/conftest.py`):**
 ```python
 requires_groq_api = pytest.mark.skipif(
     os.environ.get("GROQ_API_KEY", "test_key").startswith("test_"),
@@ -361,82 +379,44 @@ requires_redis = pytest.mark.skipif(
 )
 ```
 
-## Common Patterns
-
-**Async Testing:**
-- Not implemented (codebase is synchronous)
-- Would use: `@pytest.mark.asyncio` decorator
-
-**Error Testing:**
+**Usage:**
 ```python
-def test_unsupported_provider_raises_error(self):
-    """Test that unsupported provider raises ValueError."""
-    from src.embeddings import _get_cached_embedding_model
+@pytest.mark.integration
+@pytest.mark.slow
+def test_full_rag_pipeline():
+    """Test complete RAG pipeline."""
+    pass
 
-    _get_cached_embedding_model.cache_clear()
-
-    with pytest.raises(ValueError) as exc_info:
-        _get_cached_embedding_model("unsupported_provider", "model")
-
-    assert "Unsupported embedding provider" in str(exc_info.value)
+@pytest.mark.skipif(True, reason="Requires actual API keys")
+def test_real_llm_call():
+    """Test with real LLM."""
+    pass
 ```
 
-**Parametrized Tests:**
-- Used where multiple similar cases should be tested
-- Example: Query sanitization test with multiple inputs
-
-```python
-def test_query_sanitization(self):
-    """Test that queries are properly sanitized."""
-    test_queries = [
-        "What is RAG?",
-        "  Leading whitespace  ",
-        "Query with\nnewlines",
-        "",  # Empty query
-    ]
-
-    for query in test_queries:
-        sanitized = query.strip()
-        assert isinstance(sanitized, str)
-```
-
-**Import Testing:**
-```python
-def test_embedding_manager_import(self):
-    """Test that EmbeddingManager can be imported."""
-    from src.embeddings import EmbeddingManager
-    assert EmbeddingManager is not None
-```
-
-**State Verification:**
-```python
-def test_initialization(self, conversation_memory):
-    """Test conversation memory initialization."""
-    assert conversation_memory.session_id == "test_session_123"
-    assert conversation_memory.max_messages == 10
-    assert conversation_memory.messages == []
-    assert conversation_memory.turn_count == 0
+**Run commands:**
+```bash
+pytest -m "not slow"           # Skip slow tests
+pytest -m unit                 # Only unit tests
+pytest -m integration          # Only integration tests
 ```
 
 ## Fixture Scope
 
-**Session Scope (`@pytest.fixture(scope="session")`):**
+**Session Scope:**
+Used for one-time setup:
 ```python
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     """Set up test environment variables."""
     os.environ.setdefault("LLM_PROVIDER", "groq")
     os.environ.setdefault("GROQ_API_KEY", "test_key_for_unit_tests")
-    # ... more setup
+    os.environ.setdefault("EMBEDDING_PROVIDER", "huggingface")
+    os.environ.setdefault("USE_POSTGRES", "false")
     yield
 ```
 
 **Function Scope (default):**
-- Fresh fixture for each test
-- Most fixtures are function-scoped
-- Used for mocks, temporary files, test data
-
-**Cleanup Pattern:**
+Most fixtures are function-scoped (fresh for each test):
 ```python
 @pytest.fixture
 def temp_dir() -> Generator[Path, None, None]:
@@ -448,30 +428,44 @@ def temp_dir() -> Generator[Path, None, None]:
         shutil.rmtree(temp_path)
 ```
 
+## Test Environment Setup
+
+**Environment Variables:**
+Set in session fixture (`tests/conftest.py`):
+- `LLM_PROVIDER`: "groq"
+- `GROQ_API_KEY`: "test_key_for_unit_tests" (for mocking)
+- `EMBEDDING_PROVIDER`: "huggingface"
+- `USE_POSTGRES`: "false"
+- `USE_REDIS_QUEUE`: "false"
+- `ENABLE_OBSERVABILITY`: "false"
+
+**Temporary Resources:**
+- `temp_dir`: Temporary directory (auto-cleanup)
+- `temp_file`: Temporary test file
+- `json_file`: Temporary JSON file with sample data
+
 ## Test Statistics
 
-**Current Coverage:**
-- 7 unit test modules
-- 12 integration test modules
-- ~100+ individual test functions
-- Configuration verification tests
-- Memory system tests
-- RAG chain tests
-- Agent system tests
-- Tool functionality tests
+**Current Test Suite:**
+- Total: ~6,574 lines of test code
+- Unit tests: 7 modules
+- Integration tests: 12 modules
+- Shared fixtures: 19 in `conftest.py`
 
-**Test Modules:**
-- `tests/unit/test_embeddings.py`: 6+ test classes, embedding/chunking validation
-- `tests/unit/test_rag_chain_unit.py`: RAG chain unit behavior
-- `tests/unit/test_config.py`: Configuration loading and defaults
-- `tests/unit/test_memory.py`: Memory management and statistics
-- `tests/unit/test_tools.py`: Tool registry and execution
-- `tests/unit/test_vector_store.py`: Vector store operations
-- `tests/integration/test_rag_chain.py`: End-to-end RAG pipeline
-- `tests/integration/test_agent_system.py`: Agent orchestration
-- `tests/integration/test_manager_agent.py`: Manager agent features
-- `tests/integration/test_qa_tools.py`: QA generation tooling
-- `tests/integration/test_critical_fixes.py`: System-level validations
+**Major Test Files:**
+- `tests/integration/test_qa_tools.py`: 928 lines
+- `tests/integration/test_manager_agent.py`: 813 lines
+- `tests/test_bug_fixes.py`: 574 lines
+- `tests/integration/test_manager_features.py`: 542 lines
+- `tests/conftest.py`: 309 lines (fixtures)
+
+**Key Test Areas:**
+- Tool system: BaseTool, CalculatorTool, registry
+- Memory system: ConversationMemory, episodic memory
+- RAG chain: Document retrieval, answer generation
+- Agent system: Executor, manager agent
+- Configuration: Config loading, defaults
+- Security: Sandbox escapes, symlink traversal, SSRF
 
 ---
 
