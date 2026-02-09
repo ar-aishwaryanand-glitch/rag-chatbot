@@ -300,806 +300,6 @@ def render_minimal_sidebar():
         st.caption("💡 Use the tabs above for all features")
 
 
-def render_agent_sidebar_full():
-    """DEPRECATED: Full sidebar with all controls. Use render_minimal_sidebar() instead."""
-    # Modern sidebar header
-    with st.sidebar:
-        render_enhanced_sidebar_header()
-
-    # Agent Features Toggle - Enhanced with expander
-    with st.sidebar.expander("🧠 AI Features", expanded=True):
-        st.markdown("##### Enable Advanced Capabilities")
-
-        enable_memory = st.checkbox(
-            "🧠 Memory System",
-            value=st.session_state.enable_memory,
-            help="Agent remembers conversation history and learns from past sessions",
-            key="enable_memory_checkbox"
-        )
-
-        enable_reflection = st.checkbox(
-            "🔄 Self-Reflection",
-            value=st.session_state.enable_reflection,
-            help="Agent evaluates its actions and learns from experience",
-            key="enable_reflection_checkbox"
-        )
-
-        # Check if settings changed
-        if (enable_memory != st.session_state.enable_memory or
-            enable_reflection != st.session_state.enable_reflection):
-            st.session_state.enable_memory = enable_memory
-            st.session_state.enable_reflection = enable_reflection
-            st.session_state.agent = None  # Force reinit
-            st.session_state.agent_initialized = False
-            st.cache_resource.clear()
-            st.success("✅ Settings updated! Agent will restart.", icon="🔄")
-            st.rerun()
-
-    st.sidebar.markdown("---")
-
-    # Display Options - Enhanced with expander
-    with st.sidebar.expander("📊 Display Settings", expanded=False):
-        st.markdown("##### Customize Information Display")
-
-        st.session_state.show_agent_details = st.checkbox(
-            "🔍 Agent Reasoning",
-            value=st.session_state.show_agent_details,
-            help="Display tool selection and execution details",
-            key="show_details_checkbox"
-        )
-
-        st.session_state.show_memory_context = st.checkbox(
-            "💭 Memory Context",
-            value=st.session_state.show_memory_context,
-            help="Display conversation memory and context",
-            key="show_memory_checkbox"
-        )
-
-        st.session_state.show_reflection_insights = st.checkbox(
-            "🧠 Learning Insights",
-            value=st.session_state.show_reflection_insights,
-            help="Display self-reflection and learning statistics",
-            key="show_reflection_checkbox"
-        )
-
-    st.sidebar.markdown("---")
-
-    # Session Stats - Enhanced visualization
-    if st.session_state.agent_initialized and st.session_state.agent:
-        with st.sidebar.expander("📈 Session Statistics", expanded=True):
-            agent = st.session_state.agent
-
-            # Create stats grid
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.metric(
-                    "📝 Queries",
-                    st.session_state.session_queries,
-                    delta="+1" if st.session_state.session_queries > 0 else None
-                )
-
-            with col2:
-                if agent.enable_reflection and agent.learning_module:
-                    perf = agent.learning_module.get_overall_performance()
-                    success_rate = perf.get('success_rate', 0)
-                    st.metric(
-                        "✅ Success",
-                        f"{success_rate:.0%}",
-                        delta=None
-                    )
-                else:
-                    st.metric("✅ Success", "N/A")
-
-            # Additional metrics in two columns for better layout
-            if agent.enable_reflection and agent.learning_module:
-                perf = agent.learning_module.get_overall_performance()
-
-                col3, col4 = st.columns(2)
-
-                with col3:
-                    st.metric(
-                        "🛠️ Tools",
-                        perf.get('unique_tools_used', 0),
-                        help="Number of different tools used"
-                    )
-
-                with col4:
-                    st.metric(
-                        "⭐ Quality",
-                        f"{perf.get('avg_quality_score', 0):.1f}/5",
-                        help="Average quality score"
-                    )
-
-            st.markdown("---")
-
-            # End Session Button - Enhanced
-            if st.button("🏁 End & Save Session", use_container_width=True, type="primary"):
-                summary = agent.end_session()
-                st.success("✅ Session saved to memory!", icon="💾")
-
-                with st.expander("📋 View Session Summary"):
-                    st.json(summary)
-
-    st.sidebar.markdown("---")
-
-    # Document Upload Section - Enhanced
-    with st.sidebar.expander("📁 Document Upload", expanded=False):
-        st.markdown("##### Add Documents to Knowledge Base")
-
-        uploaded_files = st.file_uploader(
-            "Drag and drop files here",
-            type=['txt', 'md', 'pdf', 'docx'],
-            accept_multiple_files=True,
-            help="Upload .txt, .md, .pdf, or .docx files to add to the knowledge base",
-            label_visibility="collapsed"
-        )
-
-        if uploaded_files:
-            # Show file count
-            st.info(f"📚 {len(uploaded_files)} file(s) selected", icon="✨")
-
-            # Show file names
-            with st.expander("View selected files"):
-                for file in uploaded_files:
-                    st.markdown(f"• {file.name} ({file.size / 1024:.1f} KB)")
-
-            if st.button("📤 Process & Index Documents", use_container_width=True, type="primary"):
-                with st.status("Processing documents...", expanded=True) as status:
-                    try:
-                        from pathlib import Path
-
-                        # Create documents directory if it doesn't exist
-                        docs_dir = Path("data/documents")
-                        docs_dir.mkdir(parents=True, exist_ok=True)
-
-                        saved_files = []
-                        for idx, uploaded_file in enumerate(uploaded_files, 1):
-                            # Save file
-                            file_path = docs_dir / uploaded_file.name
-                            with open(file_path, "wb") as f:
-                                f.write(uploaded_file.getbuffer())
-                            saved_files.append(uploaded_file.name)
-                            status.update(
-                                label=f"📄 Saving {idx}/{len(uploaded_files)}: {uploaded_file.name}...",
-                                state="running"
-                            )
-
-                        status.update(label="🔄 Re-indexing vector store...", state="running")
-
-                        # Force rebuild of vector store with new documents
-                        from src.system_init import initialize_system
-                        initialize_system(rebuild_index=True, use_documents=True)  # side effect only
-
-                        # Clear cache and reinitialize agent with new vector store
-                        st.cache_resource.clear()
-                        st.session_state.agent = None
-                        st.session_state.agent_initialized = False
-
-                        status.update(label="✅ Upload complete!", state="complete")
-                        st.success(f"✅ Successfully indexed {len(saved_files)} document(s)!", icon="🎉")
-                        st.rerun()
-
-                    except Exception as e:
-                        status.update(label="❌ Upload failed", state="error")
-                        st.error(f"Upload failed: {str(e)}", icon="🚨")
-
-    # Confluence Integration Section
-    from src.confluence_loader import is_confluence_configured, get_confluence_loader
-    if is_confluence_configured():
-        with st.sidebar.expander("🔗 Confluence Import", expanded=False):
-            st.markdown("##### Import from Confluence")
-
-            # Space key input
-            space_key = st.text_input(
-                "Space Key",
-                value=Config.CONFLUENCE_SPACE_KEY or "",
-                help="Confluence space key (e.g., 'DOCS', 'ENGINEERING')",
-                placeholder="Enter space key..."
-            )
-
-            # Fetch options
-            fetch_option = st.radio(
-                "Fetch mode",
-                options=["All pages from space", "Search pages", "Specific page ID"],
-                help="Choose how to fetch pages from Confluence"
-            )
-
-            search_query = None
-            page_id = None
-            limit = 50
-
-            if fetch_option == "Search pages":
-                search_query = st.text_input(
-                    "Search query",
-                    placeholder="Enter search terms...",
-                    help="Search for pages containing these terms"
-                )
-            elif fetch_option == "Specific page ID":
-                page_id = st.text_input(
-                    "Page ID",
-                    placeholder="Enter Confluence page ID...",
-                    help="The numeric page ID from Confluence"
-                )
-            else:
-                limit = st.slider("Max pages to fetch", 10, 100, 50)
-
-            if st.button("📥 Fetch from Confluence", use_container_width=True, type="secondary"):
-                if not space_key and fetch_option != "Specific page ID":
-                    st.error("Please enter a space key", icon="⚠️")
-                elif fetch_option == "Search pages" and not search_query:
-                    st.error("Please enter a search query", icon="⚠️")
-                elif fetch_option == "Specific page ID" and not page_id:
-                    st.error("Please enter a page ID", icon="⚠️")
-                else:
-                    with st.status("Fetching from Confluence...", expanded=True) as status:
-                        try:
-                            loader = get_confluence_loader()
-
-                            if fetch_option == "Specific page ID":
-                                status.update(label=f"📄 Fetching page {page_id}...", state="running")
-                                documents = loader.load_documents(page_ids=[page_id])
-                            elif fetch_option == "Search pages":
-                                status.update(label=f"🔍 Searching for '{search_query}'...", state="running")
-                                documents = loader.load_documents(
-                                    space_key=space_key,
-                                    search_query=search_query,
-                                    limit=limit
-                                )
-                            else:
-                                status.update(label=f"📚 Fetching pages from {space_key}...", state="running")
-                                documents = loader.load_documents(
-                                    space_key=space_key,
-                                    limit=limit
-                                )
-
-                            if not documents:
-                                status.update(label="⚠️ No pages found", state="complete")
-                                st.warning("No pages found matching your criteria", icon="⚠️")
-                            else:
-                                status.update(label=f"🔄 Indexing {len(documents)} pages...", state="running")
-
-                                # Add documents to vector store
-                                from src.document_manager import get_document_manager
-                                doc_manager = get_document_manager()
-
-                                # Chunk and index the documents
-                                all_chunks = []
-                                for doc in documents:
-                                    chunks = doc_manager.embedding_manager.chunk_documents([doc])
-                                    all_chunks.extend(chunks)
-
-                                if all_chunks:
-                                    doc_manager.add_documents(all_chunks)
-                                    doc_manager.save()
-
-                                    # Clear cache for fresh agent
-                                    st.cache_resource.clear()
-                                    st.session_state.agent = None
-                                    st.session_state.agent_initialized = False
-
-                                    status.update(label="✅ Import complete!", state="complete")
-                                    st.success(
-                                        f"✅ Imported {len(documents)} pages ({len(all_chunks)} chunks)!",
-                                        icon="🎉"
-                                    )
-
-                                    # AUTO-TRIGGER: Check if auto-pipeline is enabled
-                                    if st.session_state.get('auto_qa_pipeline', False):
-                                        # Get topic from first document title or use space key
-                                        auto_topic = documents[0].metadata.get('title', space_key) if documents else space_key
-                                        st.session_state.pending_qa_pipeline = {
-                                            "topic": auto_topic,
-                                            "trigger": "confluence_import",
-                                            "source_docs": len(documents)
-                                        }
-                                        st.info(f"🔄 Auto-QA Pipeline will run for: **{auto_topic}**", icon="🤖")
-
-                                    st.rerun()
-                                else:
-                                    status.update(label="⚠️ No content to index", state="complete")
-                                    st.warning("Pages had no content to index", icon="⚠️")
-
-                        except Exception as e:
-                            status.update(label="❌ Import failed", state="error")
-                            st.error(f"Confluence import failed: {str(e)}", icon="🚨")
-    else:
-        with st.sidebar.expander("🔗 Confluence Import", expanded=False):
-            st.info(
-                "Confluence integration is not configured. "
-                "Set CONFLUENCE_ENABLED=true and add your credentials in .env",
-                icon="ℹ️"
-            )
-
-    # Test Case Generation Section
-    with st.sidebar.expander("🧪 Test Case Generator", expanded=False):
-        st.markdown("##### Generate QA Test Cases")
-        st.caption("Generate test cases from indexed requirements")
-
-        tc_query = st.text_input(
-            "Requirements to test",
-            placeholder="e.g., Client Setting Page, User Authentication...",
-            help="Describe the feature/page to generate test cases for",
-            key="tc_query_input"
-        )
-
-        # Output format selection
-        tc_format = st.selectbox(
-            "Output Format",
-            options=["Documentation", "Pytest Code", "Both"],
-            index=0,
-            help="Documentation = Given/When/Then format, Pytest = Python test code",
-            key="tc_format_select"
-        )
-
-        tc_options = st.columns(2)
-        with tc_options[0]:
-            tc_count = st.selectbox(
-                "Retrieval depth",
-                options=[5, 10, 15, 20],
-                index=1,
-                help="Number of requirement chunks to use"
-            )
-        with tc_options[1]:
-            tc_priority = st.selectbox(
-                "Focus",
-                options=["All", "Functional", "Edge Cases", "Negative"],
-                help="Test case focus area"
-            )
-
-        if st.button("🧪 Generate Test Cases", use_container_width=True, type="primary", key="generate_tc_btn"):
-            if not tc_query:
-                st.error("Please describe the requirements to test", icon="⚠️")
-            else:
-                with st.status("Generating test cases...", expanded=True) as status:
-                    try:
-                        from src.rag_chain import RAGChain
-                        from src.document_manager import get_document_manager
-
-                        status.update(label="📚 Loading RAG chain...", state="running")
-                        doc_manager = get_document_manager()
-                        rag_chain = RAGChain(doc_manager)
-
-                        # Add focus to query if specified
-                        full_query = tc_query
-                        if tc_priority != "All":
-                            full_query = f"{tc_query} - Focus on {tc_priority} test cases"
-
-                        status.update(label="🔍 Retrieving requirements...", state="running")
-
-                        # Generate based on selected format
-                        result = {"query": full_query, "num_requirements": 0}
-
-                        if tc_format in ["Documentation", "Both"]:
-                            doc_result = rag_chain.generate_test_cases(full_query, top_k=tc_count)
-                            result.update(doc_result)
-                            result["test_cases"] = doc_result.get("test_cases", "")
-
-                        if tc_format in ["Pytest Code", "Both"]:
-                            status.update(label="🐍 Generating pytest code...", state="running")
-                            pytest_result = rag_chain.generate_pytest_code(full_query, top_k=tc_count)
-                            result["pytest_code"] = pytest_result.get("pytest_code", "")
-                            result["suggested_filename"] = pytest_result.get("suggested_filename", "test_generated.py")
-                            if result.get("num_requirements", 0) == 0:
-                                result["num_requirements"] = pytest_result.get("num_requirements", 0)
-                                result["sources"] = pytest_result.get("sources", [])
-
-                        result["output_format"] = tc_format
-
-                        if result.get("num_requirements", 0) == 0:
-                            status.update(label="⚠️ No requirements found", state="complete")
-                            st.warning(
-                                "No requirements found. Import requirements from Confluence first.",
-                                icon="⚠️"
-                            )
-                        else:
-                            status.update(label="✅ Test cases generated!", state="complete")
-
-                            # Store in session state for display
-                            st.session_state.generated_test_cases = result
-
-                            st.success(
-                                f"Generated test cases from {result['num_requirements']} requirement chunks!",
-                                icon="🎉"
-                            )
-
-                    except Exception as e:
-                        status.update(label="❌ Generation failed", state="error")
-                        st.error(f"Test case generation failed: {str(e)}", icon="🚨")
-
-        # Display generated test cases if available
-        if hasattr(st.session_state, 'generated_test_cases') and st.session_state.generated_test_cases:
-            result = st.session_state.generated_test_cases
-            output_format = result.get("output_format", "Documentation")
-            st.markdown("---")
-            st.markdown(f"**Based on {result['num_requirements']} requirements:**")
-
-            # Show sources used
-            with st.expander("📖 Sources Used", expanded=False):
-                for src in result.get('sources', []):
-                    st.markdown(f"• **{src.get('title', src.get('source', 'Unknown'))}**")
-
-            # Display and download based on format
-            if output_format in ["Documentation", "Both"] and result.get("test_cases"):
-                st.markdown("**📋 Test Case Documentation:**")
-                st.download_button(
-                    "📥 Download Documentation (.md)",
-                    data=result['test_cases'],
-                    file_name="test_cases.md",
-                    mime="text/markdown",
-                    key="download_tc_md"
-                )
-
-            if output_format in ["Pytest Code", "Both"] and result.get("pytest_code"):
-                st.markdown("**🐍 Pytest Code:**")
-                st.download_button(
-                    "📥 Download Pytest (.py)",
-                    data=result['pytest_code'],
-                    file_name=result.get("suggested_filename", "test_generated.py"),
-                    mime="text/x-python",
-                    key="download_tc_py"
-                )
-
-    st.sidebar.markdown("---")
-
-    # QA Expert Mode Section
-    with st.sidebar.expander("🎯 QA Expert Mode", expanded=False):
-        st.markdown("##### AI-Powered QA Assistant")
-        st.caption("Specialized tools for QA professionals")
-
-        st.markdown("**Quick Actions:**")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            # Bug Report Generator
-            if st.button("🐛 Bug Report", use_container_width=True, key="qa_bug_btn"):
-                st.session_state.qa_prefill = "Write a bug report for the following issue:\n\n[Describe the bug here - what happened, where, and any error messages]"
-                st.session_state.qa_tool = "bug_report"
-                st.rerun()
-
-        with col2:
-            # Test Case Analyzer
-            if st.button("🔍 Analyze Tests", use_container_width=True, key="qa_analyze_btn"):
-                st.session_state.qa_prefill = "Analyze these test cases for coverage gaps:\n\n[Paste your test cases here]\n\nRequirements context (optional):\n[Describe what the feature should do]"
-                st.session_state.qa_tool = "qa_analysis"
-                st.rerun()
-
-        col3, col4 = st.columns(2)
-        with col3:
-            # Test Strategy Advisor
-            if st.button("📋 Strategy", use_container_width=True, key="qa_strategy_btn"):
-                st.session_state.qa_prefill = "Create a test strategy for:\n\n[Describe the feature or system to test]\n\nApplication type: [web/mobile/API/desktop]\nTech stack: [e.g., React, Python, PostgreSQL]"
-                st.session_state.qa_tool = "test_strategy"
-                st.rerun()
-
-        with col4:
-            # Test Case Generator
-            if st.button("📝 Generate", use_container_width=True, key="qa_generate_btn"):
-                st.session_state.qa_prefill = "Generate test cases for:\n\n[Describe the feature or user story to test]"
-                st.session_state.qa_tool = "rag_query"
-                st.rerun()
-
-        # Requirements Extractor (full width)
-        if st.button("📄 Extract Requirements", use_container_width=True, key="qa_extract_btn"):
-            st.session_state.qa_prefill = "Extract requirements from documents about:\n\n[Enter the feature or topic to extract requirements for]\n\nOutput format: structured (or: user_stories, acceptance_criteria)"
-            st.session_state.qa_tool = "requirements_extractor"
-            st.rerun()
-
-        st.markdown("**Advanced Tools:**")
-
-        col5, col6 = st.columns(2)
-        with col5:
-            # Traceability Matrix
-            if st.button("📊 Traceability", use_container_width=True, key="qa_trace_btn"):
-                st.session_state.qa_prefill = "Generate a traceability matrix for:\n\n[Enter feature/topic to map requirements to test cases]\n\nOutput format: markdown (or: csv, json)"
-                st.session_state.qa_tool = "traceability_matrix"
-                st.rerun()
-
-        with col6:
-            # BDD/Gherkin Generator
-            if st.button("🥒 BDD/Gherkin", use_container_width=True, key="qa_bdd_btn"):
-                st.session_state.qa_prefill = "Generate BDD scenarios for:\n\n[Describe the feature or paste requirements]\n\nFramework: cucumber (or: behave)"
-                st.session_state.qa_tool = "bdd_generator"
-                st.rerun()
-
-        # Test Data Generator (full width)
-        if st.button("🎲 Generate Test Data", use_container_width=True, key="qa_data_btn"):
-            st.session_state.qa_prefill = "Generate test data for these fields:\n\n- username: string, 3-50 characters\n- email: valid email format\n- age: integer, 18-120\n\n[Modify the fields above for your needs]\n\nOutput format: json (or: csv)"
-            st.session_state.qa_tool = "test_data_generator"
-            st.rerun()
-
-        # Clear QA mode button
-        if st.session_state.get('qa_prefill'):
-            if st.button("❌ Cancel", use_container_width=True, key="qa_cancel_btn"):
-                st.session_state.pop('qa_prefill', None)
-                st.session_state.pop('qa_tool', None)
-                st.rerun()
-
-        st.markdown("---")
-        st.markdown("**Tips:**")
-        st.caption("""
-• Click a button above to get started
-• Fill in the template that appears
-• Be specific for better results
-        """)
-
-    # Auto QA Pipeline Section
-    with st.sidebar.expander("🔄 Auto QA Pipeline", expanded=False):
-        st.markdown("##### Automated QA Workflow")
-        st.caption("Run full pipeline: Requirements → Tests → Gap Analysis")
-
-        # Auto-run toggle
-        st.session_state.auto_qa_pipeline = st.checkbox(
-            "Auto-run after document import",
-            value=st.session_state.get('auto_qa_pipeline', False),
-            help="Automatically run QA pipeline when documents are imported"
-        )
-
-        # Get default topic from pending pipeline (e.g., after Confluence import)
-        pending_pipeline = st.session_state.get('pending_qa_pipeline', {})
-        default_topic = pending_pipeline.get('topic', '') if pending_pipeline.get('trigger') == 'confluence_import' else ''
-
-        # Show notification if auto-pipeline is pending
-        if pending_pipeline and pending_pipeline.get('trigger') == 'confluence_import':
-            st.info(f"📥 Ready to analyze: **{pending_pipeline.get('topic')}** ({pending_pipeline.get('source_docs', 0)} docs imported)")
-
-        # Topic input
-        pipeline_topic = st.text_input(
-            "Topic/Feature Area",
-            value=default_topic,
-            placeholder="e.g., User Authentication",
-            help="Feature area to analyze",
-            key="pipeline_topic_input"
-        )
-
-        # Run pipeline button
-        if st.button("▶️ Run QA Pipeline", use_container_width=True, type="primary", key="run_pipeline_btn"):
-            if pipeline_topic:
-                st.session_state.pending_qa_pipeline = {
-                    "topic": pipeline_topic,
-                    "trigger": "manual"
-                }
-                st.rerun()
-            else:
-                st.error("Please enter a topic")
-
-        # Show pipeline status if running
-        if st.session_state.get('pipeline_results'):
-            results = st.session_state.pipeline_results
-            if results.get('success'):
-                st.success(f"Pipeline complete! ({results.get('total_duration', 0):.1f}s)")
-            else:
-                st.error(f"Pipeline failed: {results.get('error', 'Unknown error')}")
-
-    # Manager Agent Section
-    with st.sidebar.expander("🤖 Manager Agent", expanded=False):
-        st.markdown("##### AI Task Orchestrator")
-        st.caption("Give high-level goals - AI plans and executes")
-
-        # Initialize full manager agent with all agents if not exists
-        if "manager_agent" not in st.session_state and st.session_state.get("rag_chain"):
-            try:
-                from src.agent.manager_agent import create_full_manager
-                st.session_state.manager_agent = create_full_manager(
-                    rag_chain=st.session_state.rag_chain,
-                    llm=st.session_state.rag_chain.llm,
-                    enable_memory=True
-                )
-            except Exception as e:
-                # Fallback to basic manager
-                try:
-                    st.session_state.manager_agent = create_manager_with_qa_agent(
-                        rag_chain=st.session_state.rag_chain,
-                        llm=st.session_state.rag_chain.llm
-                    )
-                except Exception as e2:
-                    st.warning(f"Manager agent not available: {e2}")
-
-        # Show available agents
-        manager = st.session_state.get("manager_agent")
-        if manager and hasattr(manager, 'agents'):
-            agent_names = list(manager.agents.keys())
-            st.caption(f"**Agents:** {', '.join(agent_names)}")
-
-        # Goal input
-        manager_goal = st.text_area(
-            "What do you want to accomplish?",
-            placeholder="e.g., Ensure user authentication is fully tested with BDD scenarios and test data",
-            help="Describe your goal - the manager will plan and delegate to specialized agents",
-            key="manager_goal_input",
-            height=80
-        )
-
-        # Example goals with all agent types
-        with st.popover("💡 Example Goals"):
-            st.markdown("""
-            **🧪 QA Goals:**
-            - Create comprehensive tests for login feature
-            - Generate BDD scenarios with test data
-            - Analyze test coverage and fill gaps
-
-            **💻 Dev Goals:**
-            - Generate code for user authentication
-            - Refactor the payment module
-            - Analyze code for improvements
-
-            **📝 Doc Goals:**
-            - Create API documentation for endpoints
-            - Write a user guide for the dashboard
-            - Generate README for the project
-
-            **🔒 Security Goals:**
-            - Perform security review on auth code
-            - Generate security test cases
-            - Check OWASP compliance
-
-            **🔀 Multi-Agent Goals:**
-            - Document the API and create tests for it
-            - Generate code and security tests for auth
-            """)
-
-        # Get recommendations if memory available
-        if manager_goal and manager and hasattr(manager, 'get_recommendations'):
-            with st.popover("🎯 Smart Recommendations"):
-                try:
-                    recs = manager.get_recommendations(manager_goal)
-                    if recs.get("suggested_agents"):
-                        st.markdown(f"**Suggested Agents:** {', '.join(recs['suggested_agents'])}")
-                    if recs.get("estimated_tasks"):
-                        st.markdown(f"**Est. Tasks:** {recs['estimated_tasks']}")
-                    if recs.get("tips"):
-                        for tip in recs["tips"][:2]:
-                            st.caption(f"💡 {tip}")
-                except Exception:
-                    st.caption("Enter a goal to see recommendations")
-
-        # Execute button
-        if st.button("🚀 Execute Goal", use_container_width=True, type="primary", key="manager_execute_btn"):
-            if manager_goal and st.session_state.get("manager_agent"):
-                st.session_state.pending_manager_goal = manager_goal
-                st.rerun()
-            elif not manager_goal:
-                st.error("Please enter a goal")
-            else:
-                st.error("Manager agent not initialized")
-
-        # Show last execution summary
-        if st.session_state.get("manager_last_result"):
-            result = st.session_state.manager_last_result
-            status = "✅" if result.get("success") else "❌"
-            st.markdown(f"**Last Execution:** {status}")
-            if st.button("View Details", key="view_manager_details"):
-                st.session_state.show_manager_details = True
-
-        # Performance summary
-        if manager and hasattr(manager, 'get_performance_summary'):
-            with st.popover("📊 Performance"):
-                try:
-                    perf = manager.get_performance_summary()
-                    st.metric("Total Executions", perf.get("total_executions", 0))
-                    if perf.get("success_rate"):
-                        st.metric("Success Rate", f"{perf['success_rate']:.0%}")
-                except Exception:
-                    st.caption("No performance data yet")
-
-    # Task Scheduler Section
-    with st.sidebar.expander("📅 Task Scheduler", expanded=False):
-        st.markdown("##### Schedule Recurring Tasks")
-        st.caption("Automate QA workflows on a schedule")
-
-        # Initialize scheduler if not exists
-        if "task_scheduler" not in st.session_state and st.session_state.get("manager_agent"):
-            try:
-                from src.agent.task_scheduler import TaskScheduler
-                st.session_state.task_scheduler = TaskScheduler(
-                    st.session_state.manager_agent
-                )
-            except Exception as e:
-                st.warning(f"Scheduler not available: {e}")
-
-        scheduler = st.session_state.get("task_scheduler")
-
-        if scheduler:
-            # Scheduler status
-            status = scheduler.get_status()
-            col1, col2 = st.columns(2)
-            col1.metric("Scheduled", status.get("total_tasks", 0))
-            col2.metric("Pending", status.get("pending_tasks", 0))
-
-            # Add new scheduled task
-            st.markdown("**Add Scheduled Task**")
-            sched_goal = st.text_input(
-                "Goal",
-                placeholder="Run QA analysis for auth module",
-                key="scheduler_goal"
-            )
-            sched_type = st.selectbox(
-                "Frequency",
-                ["daily", "weekly", "hourly", "interval"],
-                key="scheduler_type"
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                sched_time = st.text_input("Time (HH:MM)", value="09:00", key="scheduler_time")
-            with col2:
-                if sched_type == "weekly":
-                    sched_day = st.selectbox("Day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], key="scheduler_day")
-                elif sched_type == "interval":
-                    sched_interval = st.number_input("Minutes", min_value=5, value=60, key="scheduler_interval")
-
-            if st.button("➕ Add Schedule", use_container_width=True, key="add_schedule_btn"):
-                if sched_goal:
-                    try:
-                        day_map = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
-                        task_id = scheduler.schedule_recurring(
-                            goal=sched_goal,
-                            schedule_type=sched_type,
-                            time=sched_time,
-                            day_of_week=day_map.get(sched_day, 0) if sched_type == "weekly" else 0,
-                            interval_minutes=sched_interval if sched_type == "interval" else 60
-                        )
-                        st.success(f"Scheduled! ID: {task_id}")
-                    except Exception as e:
-                        st.error(f"Failed: {e}")
-                else:
-                    st.error("Please enter a goal")
-
-            # Show scheduled tasks
-            tasks = scheduler.get_all_tasks()
-            if tasks:
-                st.markdown("**Scheduled Tasks**")
-                for task in tasks[:5]:
-                    with st.container():
-                        status_icon = "✅" if task.enabled else "⏸️"
-                        st.markdown(f"{status_icon} **{task.goal[:30]}...**")
-                        st.caption(f"{task.schedule_type} | Next: {task.next_run[:16]}")
-
-            # Start/stop scheduler
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                if not scheduler.is_running():
-                    if st.button("▶️ Start", key="start_scheduler"):
-                        scheduler.start()
-                        st.success("Scheduler started!")
-                else:
-                    if st.button("⏹️ Stop", key="stop_scheduler"):
-                        scheduler.stop()
-                        st.info("Scheduler stopped")
-
-            with col2:
-                if scheduler.is_running():
-                    st.markdown("🟢 **Running**")
-                else:
-                    st.markdown("🔴 **Stopped**")
-        else:
-            st.info("Initialize Manager Agent first")
-
-    st.sidebar.markdown("---")
-
-    # Quick Actions with modern styling
-    with st.sidebar:
-        render_quick_actions()
-
-    st.sidebar.markdown("---")
-
-    # NEW: Start New Conversation
-    if st.sidebar.button("🔄 Start New Conversation", use_container_width=True, help="Clear chat and start fresh conversation"):
-        import uuid
-        st.session_state.messages = []
-        st.session_state.conversation_thread_id = f"streamlit_{uuid.uuid4().hex[:12]}"
-        st.session_state.session_queries = 0
-        st.rerun()
-
-    st.sidebar.markdown("---")
-
-    # Performance Dashboard
-    if st.session_state.agent_initialized:
-        with st.sidebar:
-            st.sidebar.markdown("---")
-            render_stats_dashboard()
-
 
 def render_agent_details(result: Dict[str, Any]):
     """Render agent execution details in an expander."""
@@ -1600,20 +800,49 @@ def render_welcome_message_agent():
 
         qa_action = render_qa_dashboard()
 
-        # Handle QA action selection
-        if qa_action:
-            prefills = {
-                'generate': ("Generate test cases for:\n\n[Describe the feature or user story]", "rag_query"),
-                'analyze': ("Analyze coverage gaps for:\n\n[Paste test cases]\n\nRequirements:\n[Describe requirements]", "qa_analysis"),
-                'bdd': ("Generate BDD scenarios for:\n\n[Describe the feature]", "bdd_generator"),
-                'data': ("Generate test data for:\n\n- field_name: type, constraints\n- email: string, valid email\n- age: integer, 18-99", "test_data_generator"),
-                'bug': ("Write a bug report:\n\n**Summary:** [Brief description]\n**Steps to Reproduce:**\n1. \n2. \n**Expected:** \n**Actual:**", "bug_report"),
-                'trace': ("Generate traceability matrix for:\n\n[Enter feature/topic name]", "traceability_matrix"),
-            }
-            if qa_action in prefills:
-                st.session_state.qa_prefill = prefills[qa_action][0]
-                st.session_state.qa_tool = prefills[qa_action][1]
-                st.rerun()
+        # Handle QA action selection — show form inline
+        prefills = {
+            'generate': ("Generate test cases for:\n\n[Describe the feature or user story]", "rag_query", "📝 Test Generation"),
+            'analyze': ("Analyze coverage gaps for:\n\n[Paste test cases]\n\nRequirements:\n[Describe requirements]", "qa_analysis", "🔍 Coverage Analysis"),
+            'bdd': ("Generate BDD scenarios for:\n\n[Describe the feature]", "bdd_generator", "🥒 BDD Scenarios"),
+            'data': ("Generate test data for:\n\n- field_name: type, constraints\n- email: string, valid email\n- age: integer, 18-99", "test_data_generator", "🎲 Test Data"),
+            'bug': ("Write a bug report:\n\n**Summary:** [Brief description]\n**Steps to Reproduce:**\n1. \n2. \n**Expected:** \n**Actual:**", "bug_report", "🐛 Bug Report"),
+            'trace': ("Generate traceability matrix for:\n\n[Enter feature/topic name]", "traceability_matrix", "📊 Traceability"),
+        }
+
+        if qa_action and qa_action in prefills:
+            st.session_state.qa_prefill = prefills[qa_action][0]
+            st.session_state.qa_tool = prefills[qa_action][1]
+            st.session_state.qa_tool_label = prefills[qa_action][2]
+            st.rerun()
+
+        # Show QA prefill form inline (in the Tools tab, below the buttons)
+        if st.session_state.get('qa_prefill'):
+            st.markdown("---")
+            st.info(f"**{st.session_state.get('qa_tool_label', 'QA Tool')}** — Edit the template and click Submit")
+
+            qa_input = st.text_area(
+                "Your request:",
+                value=st.session_state.qa_prefill,
+                height=200,
+                key="qa_input_area_tools",
+                label_visibility="collapsed"
+            )
+
+            col_submit, col_cancel = st.columns([3, 1])
+            with col_submit:
+                if st.button("✅ Submit to Agent", type="primary", use_container_width=True, key="qa_submit_tools"):
+                    st.session_state.pop('qa_prefill', None)
+                    st.session_state.pop('qa_tool', None)
+                    st.session_state.pop('qa_tool_label', None)
+                    handle_agent_query(qa_input)
+                    st.rerun()
+            with col_cancel:
+                if st.button("❌ Cancel", use_container_width=True, key="qa_cancel_tools"):
+                    st.session_state.pop('qa_prefill', None)
+                    st.session_state.pop('qa_tool', None)
+                    st.session_state.pop('qa_tool_label', None)
+                    st.rerun()
 
         st.markdown("---")
 
@@ -2254,124 +1483,62 @@ def render_main_chat_agent():
                 st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-                 border: 1px solid #6366f1; border-radius: 20px; padding: 2rem; margin: 1rem 0; text-align: center;">
-                <h3 style="color: #f1f5f9; margin-top: 0;">👋 Start a conversation</h3>
-                <p style="color: #cbd5e1;">Ask me anything — I can search the web, query your documents, generate test cases, and more.</p>
+            <div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(20, 184, 166, 0.08) 100%);
+                 border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 16px; padding: 1.5rem; margin: 0.75rem 0; text-align: center;">
+                <h3 style="color: #f1f5f9; margin-top: 0; font-size: 1.25rem;">👋 Start a conversation</h3>
+                <p style="color: #cbd5e1; margin-bottom: 0; font-size: 0.95rem;">Ask me anything — I can search the web, query your documents, generate test cases, and more.</p>
             </div>
             """, unsafe_allow_html=True)
 
-    # Display generated test cases if available (from sidebar generator)
-    if hasattr(st.session_state, 'generated_test_cases') and st.session_state.generated_test_cases:
-        result = st.session_state.generated_test_cases
-        output_format = result.get("output_format", "Documentation")
+        # Display generated test cases if available
+        if hasattr(st.session_state, 'generated_test_cases') and st.session_state.generated_test_cases:
+            result = st.session_state.generated_test_cases
+            output_format = result.get("output_format", "Documentation")
 
-        # Get the appropriate content based on format
-        if output_format == "Pytest Code":
-            content = result.get('pytest_code', '')
-            title = f"🐍 Generated Pytest Code ({result.get('num_requirements', 0)} requirements)"
-            file_ext = "py"
-            mime_type = "text/x-python"
-        else:
-            content = result.get('test_cases', '')
-            title = f"🧪 Generated Test Cases ({result.get('num_requirements', 0)} requirements)"
-            file_ext = "md"
-            mime_type = "text/markdown"
+            if output_format == "Pytest Code":
+                content = result.get('pytest_code', '')
+                title = f"🐍 Generated Pytest Code ({result.get('num_requirements', 0)} requirements)"
+                file_ext = "py"
+                mime_type = "text/x-python"
+            else:
+                content = result.get('test_cases', '')
+                title = f"🧪 Generated Test Cases ({result.get('num_requirements', 0)} requirements)"
+                file_ext = "md"
+                mime_type = "text/markdown"
 
-        if content:
-            with st.expander(title, expanded=True):
-                if output_format == "Pytest Code":
-                    st.code(content, language="python")
-                else:
-                    st.markdown(content)
+            if content:
+                with st.expander(title, expanded=True):
+                    if output_format == "Pytest Code":
+                        st.code(content, language="python")
+                    else:
+                        st.markdown(content)
 
-                # Action buttons
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🗑️ Clear Test Cases", key="clear_tc_main"):
-                        st.session_state.generated_test_cases = None
-                        st.rerun()
-                with col2:
-                    # Download button
-                    query_slug = result.get('query', 'test_cases').replace(' ', '_')[:30]
-                    st.download_button(
-                        label=f"📥 Download as .{file_ext}",
-                        data=content,
-                        file_name=f"test_cases_{query_slug}.{file_ext}",
-                        mime=mime_type,
-                        key="download_tc"
-                    )
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🗑️ Clear Test Cases", key="clear_tc_main"):
+                            st.session_state.generated_test_cases = None
+                            st.rerun()
+                    with col2:
+                        query_slug = result.get('query', 'test_cases').replace(' ', '_')[:30]
+                        st.download_button(
+                            label=f"📥 Download as .{file_ext}",
+                            data=content,
+                            file_name=f"test_cases_{query_slug}.{file_ext}",
+                            mime=mime_type,
+                            key="download_tc"
+                        )
 
-    # QA Quick Action Input (appears when QA button is clicked)
-    if st.session_state.get('qa_prefill'):
-        qa_tool = st.session_state.get('qa_tool', 'unknown')
-        tool_labels = {
-            'bug_report': '🐛 Bug Report',
-            'qa_analysis': '🔍 Test Analysis',
-            'test_strategy': '📋 Test Strategy',
-            'rag_query': '📝 Test Generation'
-        }
-        st.info(f"**{tool_labels.get(qa_tool, 'QA Tool')}** - Complete the template below and click Submit")
+        # (QA tool forms are now handled inline in the Tools tab)
 
-        qa_input = st.text_area(
-            "Your request:",
-            value=st.session_state.qa_prefill,
-            height=200,
-            key="qa_input_area",
-            label_visibility="collapsed"
-        )
-
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("✅ Submit", type="primary", use_container_width=True, key="qa_submit_btn"):
-                # Clear the prefill state
-                st.session_state.pop('qa_prefill', None)
-                st.session_state.pop('qa_tool', None)
-
-                # Process the query
-                with st.chat_message("user"):
-                    st.markdown(qa_input)
-
-                with st.chat_message("assistant"):
-                    typing_placeholder = st.empty()
-                    with typing_placeholder:
-                        render_typing_indicator()
-
-                    try:
-                        handle_agent_query(qa_input)
-                        typing_placeholder.empty()
-
-                        if st.session_state.messages:
-                            last_msg = st.session_state.messages[-1]
-                            if last_msg['role'] == 'assistant':
-                                st.markdown(last_msg['content'])
-                                if last_msg.get('agent_result'):
-                                    render_agent_details(last_msg['agent_result'])
-                    except Exception as e:
-                        typing_placeholder.empty()
-                        st.error(f"Error: {str(e)}")
-
-                st.rerun()
-
-        with col2:
-            if st.button("❌ Cancel", use_container_width=True, key="qa_cancel_main"):
-                st.session_state.pop('qa_prefill', None)
-                st.session_state.pop('qa_tool', None)
-                st.rerun()
-
-        st.markdown("---")
-
-    # Chat input with simplified placeholder
+    # Chat input (outside tabs so it's always visible at the bottom)
     placeholder_text = "Ask a question or describe what you need help with..."
     if prompt := st.chat_input(placeholder_text, key='chat_input_agent'):
         print(f"[DEBUG] Chat input received: {prompt}")
         import sys; sys.stdout.flush()
 
-        # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Display assistant response
         with st.chat_message("assistant"):
             try:
                 print(f"[DEBUG] Calling handle_agent_query...")
@@ -2380,12 +1547,10 @@ def render_main_chat_agent():
                 print(f"[DEBUG] handle_agent_query completed")
                 sys.stdout.flush()
 
-                # Display the response
                 if st.session_state.messages:
                     last_msg = st.session_state.messages[-1]
                     if last_msg['role'] == 'assistant':
                         st.markdown(last_msg['content'])
-
                         if last_msg.get('agent_result'):
                             render_agent_details(last_msg['agent_result'])
                             render_memory_context()

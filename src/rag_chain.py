@@ -9,6 +9,9 @@ import time
 
 from .config import Config
 from .observability import get_observability
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from .vector_store import VectorStoreManager
@@ -23,11 +26,11 @@ def get_reranker():
     if _reranker is None and Config.ENABLE_RERANKING:
         try:
             from sentence_transformers import CrossEncoder
-            print(f"Loading reranker model: {Config.RERANK_MODEL}")
+            logger.info(f"Loading reranker model: {Config.RERANK_MODEL}")
             _reranker = CrossEncoder(Config.RERANK_MODEL)
         except ImportError:
-            print("Warning: sentence-transformers not installed. Reranking disabled.")
-            print("Install with: pip install sentence-transformers")
+            logger.warning("sentence-transformers not installed. Reranking disabled.")
+            logger.info("Install with: pip install sentence-transformers")
     return _reranker
 
 class RAGChain:
@@ -182,7 +185,7 @@ Requirements Context:
         if Config.LLM_PROVIDER == "groq":
             try:
                 from langchain_groq import ChatGroq
-                print(f"🤖 Initializing Groq LLM: {Config.GROQ_MODEL}")
+                logger.info(f"Initializing Groq LLM: {Config.GROQ_MODEL}")
                 return ChatGroq(
                     model=Config.GROQ_MODEL,
                     temperature=Config.LLM_TEMPERATURE,
@@ -190,8 +193,8 @@ Requirements Context:
                     groq_api_key=Config.GROQ_API_KEY
                 )
             except ImportError as e:
-                print(f"⚠️  Warning: Could not import langchain_groq: {e}")
-                print("   Installing required packages...")
+                logger.warning(f"Could not import langchain_groq: {e}")
+                logger.info("Installing required packages...")
                 import subprocess
                 subprocess.run(["pip", "install", "langchain-groq", "-q"])
                 from langchain_groq import ChatGroq
@@ -204,7 +207,7 @@ Requirements Context:
 
         elif Config.LLM_PROVIDER == "google":
             from langchain_google_genai import ChatGoogleGenerativeAI
-            print(f"🤖 Initializing Google Gemini: {Config.GEMINI_MODEL}")
+            logger.info(f"Initializing Google Gemini: {Config.GEMINI_MODEL}")
             return ChatGoogleGenerativeAI(
                 model=Config.GEMINI_MODEL,
                 temperature=Config.LLM_TEMPERATURE,
@@ -267,7 +270,7 @@ Requirements Context:
 
                 if filtered_results:
                     results = [(doc, score) for doc, score, _ in filtered_results]
-                    print(f"Relevance filter: {len(filtered_results)}/{retrieve_k} chunks passed threshold {min_relevance}")
+                    logger.debug(f"Relevance filter: {len(filtered_results)}/{retrieve_k} chunks passed threshold {min_relevance}")
 
             # Step 2: Apply reranking if enabled
             if apply_reranking and Config.ENABLE_RERANKING and len(results) > 0:
@@ -424,10 +427,10 @@ Requirements Context:
             }
         ) as span:
             try:
-                print(f"\n🔍 Processing question: {question}")
+                logger.info(f"Processing question: {question}")
 
                 # Step 1: Retrieve relevant context
-                print("📚 Retrieving relevant context...")
+                logger.debug("Retrieving relevant context...")
                 documents = self.retrieve_context(question, k=top_k)
 
                 if not documents:
@@ -445,7 +448,7 @@ Requirements Context:
 
                 # Step 3: Generate answer
                 llm_name = Config.get_llm_display_name()
-                print(f"🤖 Generating answer with {llm_name}...")
+                logger.info(f"Generating answer with {llm_name}...")
                 answer = self.generate_answer(question, context)
 
                 # Step 4: Extract sources
@@ -523,10 +526,10 @@ Requirements Context:
             }
         ) as span:
             try:
-                print(f"\n🧪 Generating test cases for: {requirement_query}")
+                logger.info(f"Generating test cases for: {requirement_query}")
 
                 # Step 1: Retrieve requirements with reranking for best relevance
-                print("📚 Retrieving requirements context...")
+                logger.debug("Retrieving requirements context...")
                 documents = self.retrieve_context(
                     requirement_query,
                     k=top_k,
@@ -550,7 +553,7 @@ Requirements Context:
 
                 # Step 3: Generate test cases using specialized prompt
                 llm_name = Config.get_llm_display_name()
-                print(f"🤖 Generating test cases with {llm_name}...")
+                logger.info(f"Generating test cases with {llm_name}...")
 
                 # Use test case prompt
                 prompt = f"Generate comprehensive test cases for the following requirements. Be thorough and cover all scenarios:\n\n{requirement_query}"
@@ -586,7 +589,7 @@ Requirements Context:
                     {"num_requirements": len(documents)}
                 )
 
-                print(f"✅ Generated test cases from {len(documents)} requirement chunks")
+                logger.info(f"Generated test cases from {len(documents)} requirement chunks")
 
                 return {
                     "query": requirement_query,
@@ -635,10 +638,10 @@ Requirements Context:
             }
         ) as span:
             try:
-                print(f"\n🐍 Generating pytest code for: {requirement_query}")
+                logger.info(f"Generating pytest code for: {requirement_query}")
 
                 # Step 1: Retrieve requirements with reranking
-                print("📚 Retrieving requirements context...")
+                logger.debug("Retrieving requirements context...")
                 documents = self.retrieve_context(
                     requirement_query,
                     k=top_k,
@@ -663,7 +666,7 @@ Requirements Context:
 
                 # Step 3: Generate pytest code using specialized prompt
                 llm_name = Config.get_llm_display_name()
-                print(f"🤖 Generating pytest code with {llm_name}...")
+                logger.info(f"Generating pytest code with {llm_name}...")
 
                 messages = self.pytest_prompt.format_messages(
                     context=context,
@@ -678,13 +681,13 @@ Requirements Context:
                 # Validate Python syntax
                 is_valid, syntax_error = self._validate_python_syntax(pytest_code)
                 if not is_valid:
-                    print(f"⚠️  Generated code has syntax errors: {syntax_error}")
+                    logger.warning(f"Generated code has syntax errors: {syntax_error}")
                     # Try to fix common issues
                     pytest_code = self._attempt_syntax_fix(pytest_code)
                     # Re-validate
                     is_valid, syntax_error = self._validate_python_syntax(pytest_code)
                     if not is_valid:
-                        print(f"⚠️  Could not fix syntax errors automatically")
+                        logger.warning("Could not fix syntax errors automatically")
 
                 # Generate suggested filename
                 feature_name = self._extract_feature_name(requirement_query)
@@ -717,7 +720,7 @@ Requirements Context:
                     {"num_requirements": len(documents)}
                 )
 
-                print(f"✅ Generated pytest code from {len(documents)} requirement chunks")
+                logger.info(f"Generated pytest code from {len(documents)} requirement chunks")
 
                 return {
                     "query": requirement_query,
@@ -929,15 +932,15 @@ Requirements Context:
         Args:
             result: Result dictionary from ask()
         """
-        print("\n" + "="*80)
-        print(f"❓ Question: {result['question']}")
-        print("="*80)
+        logger.info("\n" + "="*80)
+        logger.info(f"Question: {result['question']}")
+        logger.info("="*80)
 
-        print(f"\n💡 Answer:\n{result['answer']}")
+        logger.info(f"\nAnswer:\n{result['answer']}")
 
-        print(f"\n📖 Sources Used ({len(result['sources'])}):")
+        logger.info(f"\nSources Used ({len(result['sources'])}):")
         for i, source in enumerate(result['sources'], 1):
-            print(f"\n  {i}. Source: {source['source']} (Topic: {source['topic']})")
-            print(f"     Preview: {source['content']}")
+            logger.info(f"\n  {i}. Source: {source['source']} (Topic: {source['topic']})")
+            logger.info(f"     Preview: {source['content']}")
 
-        print("\n" + "="*80)
+        logger.info("\n" + "="*80)

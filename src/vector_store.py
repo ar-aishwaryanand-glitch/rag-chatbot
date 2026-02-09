@@ -3,6 +3,7 @@
 import time
 import hashlib
 import os
+import random
 from pathlib import Path
 from typing import List, Optional
 from langchain_community.vectorstores import FAISS
@@ -10,6 +11,9 @@ from langchain_core.documents import Document
 
 from .config import Config
 from .embeddings import EmbeddingManager
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class VectorStoreManager:
     """Manages FAISS vector store operations."""
@@ -33,21 +37,21 @@ class VectorStoreManager:
             try:
                 # Verify integrity before loading
                 if self.verify_integrity and not self._verify_checksum():
-                    print("⚠️  Vector store integrity check failed!")
-                    print("   Index may have been tampered with or corrupted")
-                    print("   You may need to re-index your documents")
+                    logger.warning("Vector store integrity check failed!")
+                    logger.warning("Index may have been tampered with or corrupted")
+                    logger.warning("You may need to re-index your documents")
                     return
 
-                print(f"📂 Loading existing vector store from {self.store_path}...")
+                logger.info(f"Loading existing vector store from {self.store_path}...")
                 self.vector_store = FAISS.load_local(
                     str(self.store_path),
                     embeddings=self.embedding_manager.embedding_model,
                     allow_dangerous_deserialization=True
                 )
-                print("✅ Vector store loaded successfully")
+                logger.info("Vector store loaded successfully")
             except Exception as e:
-                print(f"⚠️  Warning: Could not load vector store: {e}")
-                print("   You may need to re-index your documents")
+                logger.warning(f"Could not load vector store: {e}")
+                logger.warning("You may need to re-index your documents")
 
     def _compute_checksum(self) -> Optional[str]:
         """Compute SHA256 checksum of the FAISS index file."""
@@ -66,7 +70,7 @@ class VectorStoreManager:
     def _verify_checksum(self) -> bool:
         """Verify FAISS index checksum."""
         if not self._checksum_file.exists():
-            print("📝 No checksum file found - skipping integrity check")
+            logger.debug("No checksum file found - skipping integrity check")
             return True
 
         try:
@@ -75,19 +79,18 @@ class VectorStoreManager:
 
             current_checksum = self._compute_checksum()
             if current_checksum is None:
-                print("⚠️  Could not compute checksum - index file missing")
+                logger.warning("Could not compute checksum - index file missing")
                 return False
 
             if stored_checksum != current_checksum:
-                print(f"   Expected: {stored_checksum[:16]}...")
-                print(f"   Got: {current_checksum[:16]}...")
+                logger.warning(f"Checksum mismatch - Expected: {stored_checksum[:16]}..., Got: {current_checksum[:16]}...")
                 return False
 
-            print("✅ Vector store integrity verified")
+            logger.info("Vector store integrity verified")
             return True
 
         except Exception as e:
-            print(f"⚠️  Checksum verification error: {e}")
+            logger.warning(f"Checksum verification error: {e}")
             return False
 
     def _save_checksum(self) -> None:
@@ -97,9 +100,9 @@ class VectorStoreManager:
             if checksum:
                 with open(self._checksum_file, 'w') as f:
                     f.write(checksum)
-                print(f"🔐 Saved integrity checksum")
+                logger.info("Saved integrity checksum")
         except Exception as e:
-            print(f"⚠️  Could not save checksum: {e}")
+            logger.warning(f"Could not save checksum: {e}")
 
     def create_vector_store(
         self,
@@ -120,8 +123,8 @@ class VectorStoreManager:
         Returns:
             FAISS vector store instance
         """
-        print(f"Creating vector store with {len(chunks)} chunks...")
-        print(f"Processing in batches of {batch_size}...")
+        logger.info(f"Creating vector store with {len(chunks)} chunks...")
+        logger.info(f"Processing in batches of {batch_size}...")
 
         # Exponential backoff settings
         base_delay = 1.0
@@ -131,13 +134,13 @@ class VectorStoreManager:
         # Process first batch to create initial vector store
         first_batch = chunks[:batch_size]
         total_batches = (len(chunks) - 1) // batch_size + 1
-        print(f"\n[Batch 1/{total_batches}] Processing {len(first_batch)} chunks...")
+        logger.info(f"[Batch 1/{total_batches}] Processing {len(first_batch)} chunks...")
 
         self.vector_store = FAISS.from_documents(
             documents=first_batch,
             embedding=self.embedding_manager.embedding_model
         )
-        print("✓ Batch 1 completed")
+        logger.info("Batch 1 completed")
 
         # Process remaining chunks in batches
         for i in range(batch_size, len(chunks), batch_size):
@@ -145,11 +148,11 @@ class VectorStoreManager:
 
             # Apply fixed delay if specified (non-adaptive mode)
             if delay > 0 and not adaptive_delay:
-                print(f"⏳ Waiting {delay}s before next batch...")
+                logger.debug(f"Waiting {delay}s before next batch...")
                 time.sleep(delay)
 
             batch = chunks[i:i + batch_size]
-            print(f"\n[Batch {batch_num}/{total_batches}] Processing {len(batch)} chunks...")
+            logger.info(f"[Batch {batch_num}/{total_batches}] Processing {len(batch)} chunks...")
 
             # Add documents with retry logic
             retry_count = 0
@@ -158,7 +161,7 @@ class VectorStoreManager:
             while retry_count < max_retries:
                 try:
                     self.vector_store.add_documents(batch)
-                    print(f"✓ Batch {batch_num} completed")
+                    logger.info(f"Batch {batch_num} completed")
                     # Reset delay on success
                     current_delay = base_delay
                     break
@@ -169,18 +172,21 @@ class VectorStoreManager:
                     if '429' in error_str or 'rate limit' in error_str or 'too many requests' in error_str:
                         retry_count += 1
                         if retry_count < max_retries:
-                            print(f"⚠️  Rate limited. Waiting {current_delay}s before retry {retry_count}/{max_retries}...")
-                            time.sleep(current_delay)
+                            # Add jitter (0-25% of delay) to prevent thundering herd
+                            jitter = current_delay * random.uniform(0, 0.25)
+                            delay_with_jitter = current_delay + jitter
+                            logger.warning(f"Rate limited. Waiting {delay_with_jitter:.1f}s before retry {retry_count}/{max_retries}...")
+                            time.sleep(delay_with_jitter)
                             # Exponential backoff
                             current_delay = min(current_delay * 2, max_delay)
                         else:
-                            print(f"❌ Max retries reached for batch {batch_num}")
+                            logger.error(f"Max retries reached for batch {batch_num}")
                             raise
                     else:
                         # Non-rate-limit error, re-raise immediately
                         raise
 
-        print("\n✅ Vector store created successfully")
+        logger.info("Vector store created successfully")
         return self.vector_store
 
     def save_vector_store(self) -> None:
@@ -193,7 +199,7 @@ class VectorStoreManager:
 
         # Save the vector store
         self.vector_store.save_local(str(self.store_path))
-        print(f"Vector store saved to {self.store_path}")
+        logger.info(f"Vector store saved to {self.store_path}")
 
         # Save integrity checksum
         self._save_checksum()
@@ -227,13 +233,13 @@ class VectorStoreManager:
                     "Re-index documents or use skip_integrity_check=True to bypass."
                 )
 
-        print(f"Loading vector store from {self.store_path}...")
+        logger.info(f"Loading vector store from {self.store_path}...")
         self.vector_store = FAISS.load_local(
             str(self.store_path),
             embeddings=self.embedding_manager.embedding_model,
             allow_dangerous_deserialization=True  # Required for FAISS
         )
-        print("Vector store loaded successfully")
+        logger.info("Vector store loaded successfully")
         return self.vector_store
 
     def similarity_search(

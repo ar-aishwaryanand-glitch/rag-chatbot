@@ -19,12 +19,18 @@ import threading
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    from psycopg2 import pool
+    from psycopg2 import pool, OperationalError, IntegrityError, DatabaseError
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
+    OperationalError = Exception  # Fallback for type hints
+    IntegrityError = Exception
+    DatabaseError = Exception
 
 from .models import Session, Message, EpisodicMemory, SessionStats
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class PostgresBackend:
@@ -75,8 +81,10 @@ class PostgresBackend:
                 maxconn=20,  # Allow more concurrent operations (was 10)
                 dsn=self.connection_string
             )
-        except Exception as e:
+        except OperationalError as e:
             raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
+        except DatabaseError as e:
+            raise ConnectionError(f"PostgreSQL database error during pool init: {e}")
 
     @contextmanager
     def get_connection(self):
@@ -85,9 +93,14 @@ class PostgresBackend:
         try:
             yield conn
             conn.commit()
+        except (OperationalError, IntegrityError, DatabaseError) as e:
+            conn.rollback()
+            logger.error(f"Database error, rolled back transaction: {e}")
+            raise
         except Exception as e:
             conn.rollback()
-            raise e
+            logger.error(f"Unexpected error, rolled back transaction: {e}")
+            raise
         finally:
             self.connection_pool.putconn(conn)
 
@@ -195,7 +208,7 @@ class PostgresBackend:
                 cursor.close()
                 return True
         except Exception as e:
-            print(f"Error creating session: {e}")
+            logger.error(f"Error creating session: {e}")
             return False
 
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -221,7 +234,7 @@ class PostgresBackend:
                     )
                 return None
         except Exception as e:
-            print(f"Error getting session: {e}")
+            logger.error(f"Error getting session: {e}")
             return None
 
     def list_sessions(self, user_id: Optional[str] = None, limit: int = 50) -> List[Session]:
@@ -260,7 +273,7 @@ class PostgresBackend:
                     for row in rows
                 ]
         except Exception as e:
-            print(f"Error listing sessions: {e}")
+            logger.error(f"Error listing sessions: {e}")
             return []
 
     def update_session(self, session_id: str, **kwargs):
@@ -288,7 +301,7 @@ class PostgresBackend:
                     return True
                 return False
         except Exception as e:
-            print(f"Error updating session: {e}")
+            logger.error(f"Error updating session: {e}")
             return False
 
     def delete_session(self, session_id: str) -> bool:
@@ -300,7 +313,7 @@ class PostgresBackend:
                 cursor.close()
                 return True
         except Exception as e:
-            print(f"Error deleting session: {e}")
+            logger.error(f"Error deleting session: {e}")
             return False
 
     # Message operations
@@ -350,7 +363,7 @@ class PostgresBackend:
 
                 return message_id
         except Exception as e:
-            print(f"Error adding message: {e}")
+            logger.error(f"Error adding message: {e}")
             return None
 
     def get_messages(self, session_id: str, limit: Optional[int] = None) -> List[Message]:
@@ -390,7 +403,7 @@ class PostgresBackend:
                     for row in rows
                 ]
         except Exception as e:
-            print(f"Error getting messages: {e}")
+            logger.error(f"Error getting messages: {e}")
             return []
 
     # Episodic memory operations
@@ -417,7 +430,7 @@ class PostgresBackend:
                 cursor.close()
                 return memory_id
         except Exception as e:
-            print(f"Error adding memory: {e}")
+            logger.error(f"Error adding memory: {e}")
             return None
 
     def get_memories(self, session_id: str, memory_type: Optional[str] = None) -> List[EpisodicMemory]:
@@ -456,7 +469,7 @@ class PostgresBackend:
                     for row in rows
                 ]
         except Exception as e:
-            print(f"Error getting memories: {e}")
+            logger.error(f"Error getting memories: {e}")
             return []
 
     # Session stats operations
@@ -488,7 +501,7 @@ class PostgresBackend:
                 cursor.close()
                 return True
         except Exception as e:
-            print(f"Error updating stats: {e}")
+            logger.error(f"Error updating stats: {e}")
             return False
 
     def get_stats(self, session_id: str) -> Optional[SessionStats]:
@@ -514,7 +527,7 @@ class PostgresBackend:
                     )
                 return None
         except Exception as e:
-            print(f"Error getting stats: {e}")
+            logger.error(f"Error getting stats: {e}")
             return None
 
     def close(self):

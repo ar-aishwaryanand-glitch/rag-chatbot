@@ -11,6 +11,9 @@ load_dotenv(dotenv_path=env_path)
 class Config:
     """Configuration settings for the RAG system."""
 
+    # Logging Configuration
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
     # API Keys
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # Optional, for embeddings
@@ -51,8 +54,9 @@ class Config:
     USE_PINECONE = os.getenv("USE_PINECONE", "false").lower() == "true"
 
     # Pinecone Configuration (Optional - for production vector database)
+    # Migration note: PINECONE_ENVIRONMENT is no longer supported.
+    # Use PINECONE_CLOUD and PINECONE_REGION instead (serverless architecture).
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-    PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT", "us-east-1")  # Deprecated, use cloud/region
     PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "rag-agent")
     PINECONE_NAMESPACE = os.getenv("PINECONE_NAMESPACE", "")  # Empty string = default namespace
     PINECONE_METRIC = os.getenv("PINECONE_METRIC", "cosine")  # cosine, euclidean, dotproduct
