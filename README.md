@@ -199,33 +199,21 @@ EMBEDDING_PROVIDER=huggingface
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
-### 4. Choose Your Interface
+### 4. Run the Application
 
-#### Option A: Basic RAG UI (Simple Document Q&A)
-
-```bash
-streamlit run run_ui.py
-```
-
-Or use launcher scripts:
-```bash
-./launch_ui.sh           # Mac/Linux
-launch_ui.bat            # Windows
-```
-
-#### Option B: 🆕 **Agent UI with Phase 3 Features** (Recommended)
-
-Enhanced interface with memory, self-reflection, and multi-tool capabilities:
+**Recommended:** Use the Makefile:
 
 ```bash
-streamlit run run_agent_ui.py
+make run
 ```
 
-Or use launcher scripts:
+Or run directly:
+
 ```bash
-./launch_agent_ui.sh     # Mac/Linux
-launch_agent_ui.bat      # Windows
+streamlit run src/ui/streamlit_app_agent.py
 ```
+
+The Agent UI includes memory, self-reflection, and multi-tool capabilities:
 
 **New in Agent UI:**
 - 🧠 Memory system (remembers conversations)

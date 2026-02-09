@@ -37,6 +37,12 @@ class Config:
 
     # Retrieval Configuration
     TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "5"))  # Number of chunks to retrieve
+    TOP_K_REQUIREMENTS = int(os.getenv("TOP_K_REQUIREMENTS", "10"))  # More chunks for test case generation
+
+    # Quality Improvement Settings
+    ENABLE_RERANKING = os.getenv("ENABLE_RERANKING", "true").lower() == "true"
+    RERANK_MODEL = os.getenv("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+    RELEVANCE_THRESHOLD = float(os.getenv("RELEVANCE_THRESHOLD", "0.3"))  # Min similarity score (0-1)
 
     # Vector Store Configuration
     VECTOR_STORE_PATH = Path(__file__).parent.parent / "data" / "vector_store"

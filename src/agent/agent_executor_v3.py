@@ -1,5 +1,6 @@
 """Agent executor with Phase 3 enhancements: Memory + Self-Reflection."""
 
+import re
 import time
 from typing import Dict, Any, List, Optional
 from langgraph.graph import StateGraph, END
@@ -403,7 +404,7 @@ Response:"""
 
                 elif tool_name == "web_agent":
                     # Extract URLs from query
-                    import re
+
                     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
                     urls = re.findall(url_pattern, query)
 
@@ -545,7 +546,6 @@ User Question: {query}
 Provide a natural, conversational response based on the conversation history. If the history doesn't contain relevant information, say so."""
 
                 try:
-                    from langchain_core.messages import HumanMessage
                     response = self.llm.invoke([HumanMessage(content=synthesis_prompt)])
                     state['final_answer'] = response.content.strip()
                 except Exception as e:
@@ -579,10 +579,83 @@ Provide a natural, conversational response based on the conversation history. If
             return state
 
         last_result = tool_results[-1]
+        tool_name = last_result.get('tool', '')
+
+        import sys
+        print(f"[SYNTH] tool_name={tool_name}, success={last_result.get('success')}, output_len={len(str(last_result.get('output','')))}", file=sys.stderr, flush=True)
 
         if last_result['success']:
             output = last_result['output']
-            if "Answer:" in output:
+
+            # For web search, web agent, and news, ALWAYS use LLM to synthesize detailed natural language response
+            if tool_name in ['web_search', 'web_agent', 'news_api'] and output and len(output) > 30:
+                print(f"[SYNTH] Entering synthesis block for {tool_name}", file=sys.stderr, flush=True)
+                try:
+
+
+                    # Extract sources for later
+                    sources_line = ""
+                    if 'Sources:' in output:
+                        parts = output.rsplit('Sources:', 1)
+                        content = parts[0].strip()
+                        sources_line = f"\n\nSources: {parts[1].strip()}"
+                    else:
+                        content = output
+
+                    # Aggressively clean search result artifacts
+                    content = re.sub(r'\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago\s*[·\-—–]\s*', '', content)
+                    content = re.sub(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*\d{4}\s*[·\-—–]\s*', '', content)
+                    content = re.sub(r'Missing:\s*[^|]+\|\s*Show results with:[^\n]+', '', content)
+                    content = re.sub(r'More results from\s+\S+', '', content)
+                    content = re.sub(r'www\.\w+\.com', '', content)
+                    content = re.sub(r'https?://\S+', '', content)
+                    content = re.sub(r'\.\.\.\s*', '. ', content)
+                    content = re.sub(r'\s+', ' ', content).strip()
+
+                    synthesis_prompt = f"""The user asked: "{state['query']}"
+
+Here is raw information I gathered from the web:
+
+{content[:2000]}
+
+Write a clear, well-structured answer in 3 short paragraphs separated by blank lines.
+
+Paragraph 1: The most important headline or development.
+Paragraph 2: Supporting details and context.
+Paragraph 3: Why it matters or what's next.
+
+Rules:
+- Each paragraph should be 2-3 sentences MAX. Keep it concise.
+- Separate paragraphs with a blank line.
+- No bullet points, no lists, no markdown, no bold, no headers.
+- No URLs or website names.
+- Write naturally like a news briefing to a colleague."""
+
+                    response = self.llm.invoke([HumanMessage(content=synthesis_prompt)])
+                    synthesized = response.content.strip()
+
+                    # Clean up any markdown artifacts
+                    synthesized = re.sub(r'[*#]+', '', synthesized)
+                    synthesized = re.sub(r'https?://\S+', '', synthesized)
+                    synthesized = re.sub(r'www\.\S+', '', synthesized)
+                    # Collapse triple+ newlines to double
+                    synthesized = re.sub(r'\n{3,}', '\n\n', synthesized).strip()
+
+                    state['final_answer'] = synthesized + sources_line
+                    print(f"✅ Synthesis complete ({len(synthesized)} chars)")
+
+                except Exception as e:
+                    print(f"[SYNTH] SYNTHESIS FAILED: {e}", file=sys.stderr, flush=True)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
+                    # Even on error, try to clean up the output
+
+                    cleaned = re.sub(r'Missing:\s*[^|]+\|\s*Show results with:[^\n]+', '', output)
+                    cleaned = re.sub(r'\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago\s*[·\-—–]\s*', '', cleaned)
+                    cleaned = re.sub(r'More results from\s+\S+', '', cleaned)
+                    state['final_answer'] = cleaned.replace('**', '').strip()
+
+            elif "Answer:" in output:
                 # Remove "Answer:" label but keep everything else including sources
                 final_output = output.replace("Answer:", "").strip()
                 state['final_answer'] = final_output

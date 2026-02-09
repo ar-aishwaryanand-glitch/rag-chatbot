@@ -746,6 +746,247 @@ def get_modern_css() -> str:
             padding: 0.75rem 1rem;
         }
     }
+
+    /* ========== QA ACTION CARDS ========== */
+    .qa-action-card {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(51, 65, 85, 0.6) 100%);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.25rem;
+        margin: 0.5rem 0;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .qa-action-card:hover {
+        border-color: var(--primary-color);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(99, 102, 241, 0.2);
+    }
+
+    .qa-action-icon {
+        font-size: 2rem;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .qa-action-content {
+        flex: 1;
+    }
+
+    .qa-action-title {
+        color: var(--text-primary);
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .qa-action-description {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+
+    /* ========== QUICK START SECTION ========== */
+    .quick-start-container {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 20px;
+        padding: 2rem;
+        margin: 1.5rem 0;
+    }
+
+    .quick-start-title {
+        color: var(--primary-light);
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* ========== HELP TOOLTIP ========== */
+    .help-bubble {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        background: rgba(99, 102, 241, 0.2);
+        border-radius: 50%;
+        color: var(--primary-light);
+        font-size: 0.75rem;
+        cursor: help;
+        margin-left: 0.5rem;
+    }
+
+    .help-bubble:hover::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 0.5rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        white-space: nowrap;
+        z-index: 1000;
+        box-shadow: var(--shadow-lg);
+    }
+
+    /* ========== COMPACT SIDEBAR SECTIONS ========== */
+    .sidebar-section {
+        background: rgba(30, 41, 59, 0.4);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1rem;
+        margin: 0.75rem 0;
+    }
+
+    .sidebar-section-title {
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* ========== SIMPLE PROMPT CARDS ========== */
+    .prompt-card {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .prompt-card:hover {
+        background: rgba(99, 102, 241, 0.15);
+        border-color: var(--primary-color);
+    }
+
+    .prompt-card-text {
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    }
+
+    /* ========== ONBOARDING STEPS ========== */
+    .onboarding-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+        background: rgba(30, 41, 59, 0.4);
+        border-radius: 12px;
+        margin: 0.5rem 0;
+    }
+
+    .onboarding-number {
+        width: 28px;
+        height: 28px;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 700;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .onboarding-content {
+        flex: 1;
+    }
+
+    .onboarding-title {
+        color: var(--text-primary);
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .onboarding-text {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+
+    /* ========== COMPACT BUTTONS ========== */
+    .compact-btn-group {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .compact-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: rgba(51, 65, 85, 0.6);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .compact-btn:hover {
+        background: rgba(99, 102, 241, 0.2);
+        border-color: var(--primary-color);
+    }
+
+    /* ========== MODE INDICATOR ========== */
+    .mode-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        border-radius: 20px;
+        color: white;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    /* ========== EMPTY STATE ========== */
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: var(--text-muted);
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .empty-state-title {
+        color: var(--text-secondary);
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-state-text {
+        font-size: 1rem;
+        max-width: 400px;
+        margin: 0 auto;
+    }
     </style>
     """
 

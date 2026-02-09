@@ -194,33 +194,64 @@ class ReflectionModule:
             "tools_used": tools_used or []
         }
 
-        # Simple heuristic evaluation
-        quality_score = 3.0  # Default: moderate
+        # Improved adaptive quality scoring
+        quality_score = 3.5  # Higher base score
 
-        # Adjust based on answer characteristics
-        if len(answer) < 20:
-            quality_score -= 1.0
-        elif len(answer) > 100:
-            quality_score += 0.5
+        # Length-based scoring (more nuanced)
+        answer_len = len(answer)
+        if answer_len < 20:
+            quality_score -= 1.5  # Very short = problem
+        elif answer_len < 50:
+            quality_score -= 0.5  # Short
+        elif answer_len > 200:
+            quality_score += 0.5  # Good detail
+        elif answer_len > 500:
+            quality_score += 0.75  # Very detailed
 
+        # Source grounding bonus
         if sources and len(sources) > 0:
-            quality_score += 0.5
+            quality_score += 0.3
+            if len(sources) >= 2:
+                quality_score += 0.2  # Multiple sources = better
 
-        if "error" in answer.lower() or "failed" in answer.lower():
+        # Tool usage bonus (successful tool use indicates good routing)
+        if tools_used and len(tools_used) > 0:
+            quality_score += 0.3
+            # Bonus for specialized tools (QA tools, web search)
+            specialized_tools = {'qa_analysis', 'bug_report', 'test_strategy', 'web_search', 'news_api'}
+            if any(t in specialized_tools for t in tools_used):
+                quality_score += 0.2
+
+        # Content quality checks
+        answer_lower = answer.lower()
+        if "error" in answer_lower or "failed" in answer_lower:
             quality_score -= 1.0
+        if "sorry" in answer_lower and "couldn't" in answer_lower:
+            quality_score -= 0.5
+
+        # Positive content indicators
+        if any(word in answer_lower for word in ['because', 'therefore', 'specifically', 'for example']):
+            quality_score += 0.2  # Explanatory language
+        if 'sources:' in answer_lower:
+            quality_score += 0.2  # Properly cited
 
         quality_score = max(1.0, min(5.0, quality_score))  # Clamp to 1-5
 
         evaluation = {
             "quality_score": quality_score,
             "has_sources": bool(sources),
-            "answer_length_category": self._categorize_length(len(answer))
+            "answer_length_category": self._categorize_length(len(answer)),
+            "tools_used_count": len(tools_used) if tools_used else 0
         }
 
         insights = []
 
-        if quality_score >= 4.0:
+        if quality_score >= 4.5:
+            insights.append("Excellent answer with comprehensive detail")
+        elif quality_score >= 4.0:
             insights.append("High-quality answer with good detail")
+        elif quality_score >= 3.5:
+            insights.append("Good answer meeting expectations")
         elif quality_score <= 2.0:
             insights.append("Answer may lack detail or have issues")
 

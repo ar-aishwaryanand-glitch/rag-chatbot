@@ -672,4 +672,4 @@ ENABLE_OBSERVABILITY=true      # Monitor performance
 - [RAG Core](RAG_CORE.md) - Embedding and vector store config
 - [Database Persistence](DATABASE_PERSISTENCE.md) - Database settings
 - [Tools Reference](TOOLS_REFERENCE.md) - Tool configuration
-- [Main Architecture](../ARCHITECTURE.md) - System overview
+- [Codebase Guide](../CODEBASE_GUIDE.md) - System overview

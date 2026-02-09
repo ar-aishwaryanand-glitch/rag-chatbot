@@ -73,12 +73,13 @@ class EmbeddingManager:
             Config.EMBEDDING_MODEL
         )
 
-    def chunk_documents(self, documents: List[dict]) -> List[Document]:
+    def chunk_documents(self, documents: List) -> List[Document]:
         """
         Split documents into smaller chunks.
 
         Args:
-            documents: List of document dictionaries with 'content' and 'metadata'
+            documents: List of document dictionaries with 'content' and 'metadata',
+                       or LangChain Document objects
 
         Returns:
             List of LangChain Document objects (chunks)
@@ -86,12 +87,16 @@ class EmbeddingManager:
         langchain_docs = []
 
         for doc in documents:
-            # Create LangChain Document
-            langchain_doc = Document(
-                page_content=doc["content"].strip(),
-                metadata=doc["metadata"]
-            )
-            langchain_docs.append(langchain_doc)
+            # Handle both dict format and LangChain Document objects
+            if isinstance(doc, Document):
+                langchain_docs.append(doc)
+            else:
+                # Create LangChain Document from dict
+                langchain_doc = Document(
+                    page_content=doc["content"].strip(),
+                    metadata=doc["metadata"]
+                )
+                langchain_docs.append(langchain_doc)
 
         # Split documents into chunks
         chunks = self.text_splitter.split_documents(langchain_docs)

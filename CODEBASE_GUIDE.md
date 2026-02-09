@@ -1,169 +1,107 @@
 # RAG Agent Codebase Guide
 
-**Last Updated:** 2026-02-04
-**Status:** Production-ready with Phase 4 features + Performance optimizations
+**Last Updated:** 2026-02-09
+**Status:** Production-ready with Phase 4 features + bugfixes
 
 ---
 
 ## Table of Contents
 
-1. [Executive Summary](#executive-summary)
-2. [Talk Track](#talk-track)
-3. [Quickstart](#quickstart)
-4. [Architecture](#architecture)
-5. [Repository Map](#repository-map)
-6. [Key Flows](#key-flows)
-7. [Configuration](#configuration)
-8. [API & Interfaces](#api--interfaces)
-9. [Data Model](#data-model)
-10. [Tools & Capabilities](#tools--capabilities)
-11. [Security & Privacy](#security--privacy)
-12. [Deployment](#deployment)
-13. [Troubleshooting](#troubleshooting)
+1. [Overview](#overview)
+2. [Quickstart](#quickstart)
+3. [Architecture](#architecture)
+4. [Project Structure](#project-structure)
+5. [Core Components Deep Dive](#core-components-deep-dive)
+   - [RAG Chain](#1-rag-chain)
+   - [Agent Executor (LangGraph)](#2-agent-executor-langgraph-state-machine)
+   - [Agent State](#3-agent-state)
+   - [Tool Registry & Tools](#4-tool-registry--tools)
+   - [Memory System](#5-memory-system-3-tier)
+   - [Reflection & Learning](#6-reflection--learning-system)
+   - [Manager Agent & Specialized Agents](#7-manager-agent--multi-agent-orchestration)
+   - [QA Pipeline](#8-qa-pipeline)
+   - [Policy Engine](#9-policy-engine)
+   - [Database & Checkpoints](#10-database--checkpoint-persistence)
+   - [Observability](#11-observability--monitoring)
+   - [Task Queue](#12-redis-task-queue)
+   - [Streamlit UI](#13-streamlit-ui)
+6. [Key Flows (End-to-End)](#key-flows-end-to-end)
+7. [Configuration Reference](#configuration-reference)
+8. [API Reference](#api-reference)
+9. [Scripts & Utilities](#scripts--utilities)
+10. [Testing](#testing)
+11. [Design Patterns](#design-patterns)
+12. [Security](#security)
+13. [Deployment](#deployment)
+14. [Troubleshooting](#troubleshooting)
+15. [Glossary](#glossary)
 
 ---
 
-## Executive Summary
+## Overview
 
 ### What It Does
-A production-ready Retrieval-Augmented Generation (RAG) system with autonomous agent capabilities. Users ask questions, the system retrieves relevant documents, and generates accurate answers grounded in your data. **Optimized for speed (3-5s responses) and natural conversation.**
 
-**Key Features:**
-- **RAG Pipeline**: Document upload → embedding → vector search → LLM answer generation
-- **Agent System**: 7 specialized tools with intelligent routing (web search, code execution, file ops, etc.)
-- **Memory System**: Short-term conversation memory + long-term episodic memory with natural conversation support
-- **Self-Reflection**: Agent evaluates its decisions and learns from mistakes (optional)
-- **Web Browsing**: Autonomous web agent that extracts clean content from URLs
-- **Production Features**: Policy engine, Redis queue, OpenTelemetry observability, PostgreSQL persistence
-- **Performance**: Lazy loading, async database writes, connection pooling, content deduplication
+A production-ready Retrieval-Augmented Generation (RAG) system with autonomous agent capabilities, multi-tier conversation memory, self-reflection, and QA automation tools. Users ask questions, the system retrieves relevant documents, and generates accurate answers grounded in your data — with the ability to search the web, run calculations, generate test cases, and remember past conversations.
 
-**Recent Optimizations (2026-02-04):**
-- ⚡ Lazy agent initialization (instant page load instead of 10s)
-- ⚡ Async database writes with connection pooling (110ms → non-blocking)
-- 🧠 Natural conversation handling (answers from memory without tools)
-- ✨ Content deduplication in web tools (no repetitive results)
-- 🐛 Fixed duplicate element keys in UI
-- 🎯 Optimized for dev assist use cases (Confluence integration, test case generation)
+### Key Features
 
-**Evidence:** [README.md](README.md#L3-L8), [src/rag_chain.py](src/rag_chain.py#L15-L16)
+| Feature | Description |
+|---------|-------------|
+| **RAG Pipeline** | Document upload → chunking → embedding → vector search → reranking → LLM answer |
+| **Agent System** | 15+ specialized tools with intelligent LLM-based routing |
+| **3-Tier Memory** | Session memory + episodic memory (JSON) + checkpoint recovery (PostgreSQL) |
+| **Self-Reflection** | Agent evaluates its own decisions and learns from patterns |
+| **Web Browsing** | Autonomous Playwright-based web agent with content extraction |
+| **QA Automation** | Test case generation, BDD/Gherkin, bug reports, traceability matrix |
+| **Multi-Agent** | Manager agent orchestrating specialized QA/Dev/Doc agents |
+| **Production Ready** | Policy engine, Redis queue, OpenTelemetry, PostgreSQL, Pinecone |
+
+### Performance
+
+| Metric | Value |
+|--------|-------|
+| Page Load | Instant (lazy agent initialization) |
+| Query Response | 3–5s average |
+| Memory-Based Answers | ~1s (no tool overhead) |
+| First-Time Startup | 3–5s (model download on first run: ~90MB) |
 
 ### Who Uses It
-- **End Users**: Via Streamlit web UI (chat interface)
-- **Developers**: Via Python API (`RAGChain.ask()` or `AgentExecutorV3.execute()`)
-- **Background Workers**: Via Redis task queue for async processing
 
-### Problem Solved
-Traditional Q&A systems hallucinate or provide outdated information. This system:
-1. Grounds answers in your documents (no hallucinations)
-2. Provides source attribution (know where answers come from)
-3. Handles complex multi-step queries via agent tools
-4. Remembers context across conversations
-5. Learns and improves over time
-6. **Fast responses** (3-5s) with async optimizations
-7. **Natural conversation** - understands when to use tools vs. memory
-
-### Recent Performance Journey (Feb 2024)
-
-**Problem 1: Slow Page Load (10+ seconds)**
-- **Cause:** Agent initialization blocking UI render
-- **Fix:** Lazy loading - agent only initializes on first query
-- **Code:** [src/ui/streamlit_app_agent.py:174-199](src/ui/streamlit_app_agent.py#L174-L199)
-
-**Problem 2: Slow Query Processing (60+ seconds)**
-- **Cause:** Database writes blocking responses, aggressive agent settings
-- **Fix:** Async database writes, connection pooling, reduced iterations (3 instead of 10)
-- **Code:** [src/database/postgres_backend.py:310-347](src/database/postgres_backend.py#L310-L347)
-
-**Problem 3: Repetitive Web Content**
-- **Cause:** Same promotional text appearing 3 times in search results
-- **Fix:** Fingerprint-based content deduplication in all web tools
-- **Code:** [src/agent/tools/web_search_tool.py:100-131](src/agent/tools/web_search_tool.py#L100-L131)
-
-**Problem 4: Natural Conversation Not Working**
-- **Cause:** Agent using document search for questions about "our conversation"
-- **Fix:** Smart routing with "none" option for memory-based answers
-- **Code:** [src/agent/agent_executor_v3.py:209-236](src/agent/agent_executor_v3.py#L209-L236)
-
-**Result:** 3-5s average response time, clean outputs, natural conversation support
-
----
-
-## Talk Track
-
-### 60-Second Pitch
-"This is a RAG chatbot powered by Groq's fast LLM and local embeddings. Upload documents, ask questions, get accurate answers with sources. Plus an agent layer with 7 tools—web search, code execution, file ops—that intelligently routes queries and remembers conversations. Production-ready with policies, observability, and queue workers."
-
-### 5-Minute Explanation
-
-**1. Core RAG (2 min)**
-- User uploads PDFs/docs → chunked into 800-char pieces
-- Each chunk embedded using HuggingFace sentence-transformers
-- Stored in FAISS (local) or Pinecone (cloud) vector database
-- Query → retrieve top-K similar chunks → LLM generates answer
-- Evidence: [src/document_loader.py](src/document_loader.py), [src/vector_store.py](src/vector_store.py)
-
-**2. Agent Layer (2 min)**
-- Built with LangGraph state machines
-- 7 tools: document_search, web_search, web_agent, calculator, python_executor, file_operations, document_manager
-- LLM decides which tool(s) to use based on query
-- Example: "latest AI news" → web_search finds URLs → web_agent extracts content → synthesizes answer
-- Evidence: [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py#L22-L32)
-
-**3. Production Features (1 min)**
-- Memory: Conversation buffer + episodic summaries persisted to disk/PostgreSQL
-- Reflection: Agent evaluates tool selection, learns success patterns
-- Policy Engine: YAML-based rules for rate limiting, cost control, content filtering
-- Observability: OpenTelemetry tracing to Jaeger/Honeycomb
-- Evidence: [src/policy/default_policies.yaml](src/policy/default_policies.yaml), [src/observability.py](src/observability.py)
-
-### Common Questions
-
-**Q: How fast is it?**
-A: Groq API provides 10-100x faster inference than OpenAI. Local embeddings after first download. FAISS searches millions of vectors in milliseconds.
-Evidence: [README.md](README.md#L517-L520)
-
-**Q: What about hallucinations?**
-A: Prompt explicitly instructs LLM to answer ONLY from retrieved context. Source attribution lets users verify. Reflection module can detect low-quality answers.
-Evidence: [src/rag_chain.py](src/rag_chain.py#L33-L40)
-
-**Q: How does the agent decide which tool to use?**
-A: LLM receives tool descriptions in prompt, uses chain-of-thought reasoning to select. Learning module tracks tool success rates to improve future routing.
-Evidence: [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py#L103-L141), [src/agent/reflection/learning_module.py](src/agent/reflection/learning_module.py#L192-L212)
-
-**Q: Can it browse the web?**
-A: Yes. web_agent tool uses Playwright to fetch pages, readability-lxml to extract clean content, avoiding ads/navigation.
-Evidence: [src/agent/tools/web_agent_tool.py](src/agent/tools/web_agent_tool.py)
-
-**Q: Is it production-ready?**
-A: Yes. Policy engine enforces limits, observability tracks performance, PostgreSQL persists sessions, Redis enables distributed processing, checkpointing prevents data loss.
-Evidence: [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md), [POLICY_ENGINE_GUIDE.md](POLICY_ENGINE_GUIDE.md)
+| User Type | Access Method |
+|-----------|---------------|
+| End Users | Streamlit web UI (chat interface) |
+| Developers | Python API — `RAGChain.ask()` or `AgentExecutorV3.execute()` |
+| Workers | Redis task queue for async processing |
 
 ---
 
 ## Quickstart
 
 ### Prerequisites
-- Python 3.11+ (tested on 3.14)
-- 4GB RAM minimum
-- Groq API key (free from https://console.groq.com)
 
-### Setup (5 minutes)
+- Python 3.11+ (3.9+ minimum)
+- 4GB RAM minimum
+- Groq API key (free at https://console.groq.com)
+
+### Setup
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/ar-aishwaryanand-glitch/rag-chatbot.git
-cd rag-chatbot
+# Option A: Automated setup (recommended)
+chmod +x setup.sh && ./setup.sh   # Mac/Linux
+setup.bat                          # Windows
+
+# Option B: Manual setup
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-
-# 2. Install Playwright for web agent
 playwright install chromium
-
-# 3. Configure environment
 cp .env.example .env
 # Edit .env and add your GROQ_API_KEY
 ```
 
-**Minimal .env:**
+### Minimal .env
+
 ```bash
 GROQ_API_KEY=your_key_here
 LLM_PROVIDER=groq
@@ -172,476 +110,1098 @@ EMBEDDING_PROVIDER=huggingface
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
-Evidence: [README.md](README.md#L158-L198)
-
-### Run Locally
+### Run
 
 ```bash
-# Agent UI (recommended - full features)
-streamlit run run_agent_ui.py
+# Mac: double-click run.command in Finder
+# Windows: double-click run.bat
 
-# Basic RAG UI (simple Q&A only)
-streamlit run run_ui.py
+# Or via Makefile
+make run
 
+# Or directly
+streamlit run src/ui/streamlit_app_agent.py
 # Open http://localhost:8501
 ```
 
-Evidence: [run_agent_ui.py](run_agent_ui.py)
-
-### Quick Test
+### Quick Test (Python API)
 
 ```python
 from src.system_init import initialize_system
 
-# Initialize RAG chain
 rag = initialize_system()
-
-# Ask a question
 result = rag.ask("What is retrieval-augmented generation?")
 print(result['answer'])
-print(result['sources'])
 ```
-
-Evidence: [src/system_init.py](src/system_init.py#L11-L34)
-
-### Common Issues
-
-**Issue:** `ImportError: No module named 'groq'`
-**Fix:** `pip install langchain-groq`
-
-**Issue:** `Certificate verification failed` (Playwright)
-**Fix:** `export NODE_TLS_REJECT_UNAUTHORIZED=0 && playwright install chromium`
-
-**Issue:** `Vector store not initialized`
-**Fix:** Upload documents first or switch to sample documents mode
-Evidence: [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md#L10-L53)
 
 ---
 
 ## Architecture
 
-### High-Level Components
+### High-Level Component Diagram
 
-```mermaid
-graph TB
-    User[User] --> UI[Streamlit UI]
-    UI --> SM[State Manager]
-    SM --> RAG[RAG Chain]
-    SM --> Agent[Agent Executor]
-
-    RAG --> VecMgr[Vector Store Manager]
-    RAG --> LLM[LLM Provider]
-
-    Agent --> ToolReg[Tool Registry]
-    Agent --> Memory[Memory Manager]
-    Agent --> Reflect[Reflection Module]
-    Agent --> Policy[Policy Engine]
-
-    ToolReg --> Tools[7 Tools]
-    Tools --> RAGTool[document_search]
-    Tools --> WebSearch[web_search]
-    Tools --> WebAgent[web_agent]
-    Tools --> Calc[calculator]
-    Tools --> PyExec[python_executor]
-    Tools --> FileOps[file_operations]
-    Tools --> DocMgmt[document_manager]
-
-    VecMgr --> FAISS[(FAISS Local)]
-    VecMgr --> Pinecone[(Pinecone Cloud)]
-
-    Memory --> ConvMem[Conversation Memory]
-    Memory --> EpMem[Episodic Memory]
-
-    EpMem --> Disk[(data/ directory)]
-    Agent --> PG[(PostgreSQL)]
-    Agent --> Redis[(Redis Queue)]
-
-    LLM --> Groq[Groq API]
-    LLM --> Gemini[Google Gemini]
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   User      │────▶│   Streamlit UI   │────▶│  State Manager  │
+│             │     │ (Chat Interface)  │     │ (Session State) │
+└─────────────┘     └──────────────────┘     └────────┬────────┘
+                                                       │
+                    ┌──────────────────────────────────┼──────────────────────────┐
+                    │                                  │                          │
+                    ▼                                  ▼                          ▼
+           ┌────────────────┐              ┌───────────────────┐       ┌──────────────────┐
+           │   RAG Chain    │              │  Agent Executor   │       │  Policy Engine   │
+           │ (retrieve+gen) │              │  (LangGraph FSM)  │       │ (rules & limits) │
+           └───────┬────────┘              └────────┬──────────┘       └──────────────────┘
+                   │                                │
+                   ▼                                ▼
+           ┌────────────────┐              ┌───────────────────┐
+           │  Vector Store  │              │  Tool Registry    │
+           │ (FAISS/Pinecone│              │  (15+ tools)      │
+           └────────────────┘              └────────┬──────────┘
+                                                    │
+                                    ┌───────────────┼───────────────┐
+                                    ▼               ▼               ▼
+                             ┌────────────┐  ┌────────────┐  ┌────────────┐
+                             │  Memory    │  │ Reflection │  │ Checkpoint │
+                             │  Manager   │  │ + Learning │  │ (Postgres) │
+                             └────────────┘  └────────────┘  └────────────┘
 ```
 
-Evidence: Component relationships inferred from [src/system_init.py](src/system_init.py), [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py#L34-L101)
+### Data Flow Summary
 
-### Data Flow: RAG Query
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant UI as Streamlit UI
-    participant RAG as RAGChain
-    participant VS as VectorStore
-    participant LLM as Groq LLM
-
-    U->>UI: Ask question
-    UI->>RAG: ask(question)
-    RAG->>VS: similarity_search(question, k=3)
-    VS-->>RAG: [doc1, doc2, doc3]
-    RAG->>RAG: format_context(docs)
-    RAG->>LLM: generate_answer(context + question)
-    LLM-->>RAG: answer
-    RAG-->>UI: {answer, sources}
-    UI-->>U: Display answer + sources
-```
-
-Evidence: [src/rag_chain.py](src/rag_chain.py#L197-L289)
-
-### Data Flow: Agent Query
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as AgentExecutor
-    participant M as MemoryManager
-    participant T as ToolRegistry
-    participant R as ReflectionModule
-
-    U->>A: execute(query)
-    A->>M: get_conversation_context()
-    M-->>A: context
-    A->>A: understand_query (LLM)
-    A->>A: route_to_tool (LLM decides)
-    A->>T: get_tool(tool_name)
-    T-->>A: tool
-    A->>T: tool.execute(params)
-    T-->>A: result
-    A->>A: synthesize_answer
-    A->>M: add_messages(user, assistant)
-    A->>R: reflect_on_tool_selection
-    R->>R: learning_module.learn()
-    A-->>U: final_answer
-```
-
-Evidence: [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py#L103-L141)
+| Flow | Path |
+|------|------|
+| **RAG Query** | Question → Embed → Vector Search → Rerank → LLM Generate → Answer + Sources |
+| **Agent Query** | Query → Memory Context → LLM Route → Tool Execute → LLM Synthesize → Reflect |
+| **Memory Answer** | Query → Memory Context → LLM answers directly (no tool) |
 
 ---
 
-## Repository Map
+## Project Structure
 
-### Directory Structure
+```
+rag-work/
+├── src/
+│   ├── __init__.py
+│   ├── config.py                      # Central configuration (150+ settings)
+│   ├── system_init.py                 # System bootstrap & initialization
+│   ├── rag_chain.py                   # Core RAG pipeline (retrieve + generate)
+│   ├── embeddings.py                  # Text chunking & embedding generation
+│   ├── vector_store.py                # FAISS vector store backend
+│   ├── vector_store_pinecone.py       # Pinecone cloud vector store backend
+│   ├── document_manager.py            # Unified document interface (FAISS/Pinecone)
+│   ├── document_loader.py             # PDF, DOCX, TXT, MD file parsing
+│   ├── auto_indexer.py                # Automatic document indexing
+│   ├── confluence_loader.py           # Confluence wiki integration
+│   ├── observability.py               # OpenTelemetry tracing & metrics
+│   │
+│   ├── agent/                         # ========== AGENT SYSTEM ==========
+│   │   ├── __init__.py                # Module exports
+│   │   ├── agent_executor_v3.py       # LangGraph state machine (1113 lines)
+│   │   ├── agent_state.py             # AgentState TypedDict definition
+│   │   ├── types.py                   # Shared types: AgentType, TaskAssignment, etc.
+│   │   ├── tool_registry.py           # Tool registration & lookup
+│   │   ├── manager_agent.py           # Multi-agent orchestrator
+│   │   ├── manager_memory.py          # Manager state tracking
+│   │   ├── specialized_agents.py      # DevAgent, DocAgent, SecurityAgent
+│   │   ├── task_scheduler.py          # Task scheduling for agents
+│   │   ├── qa_pipeline.py             # Automated QA workflow
+│   │   │
+│   │   ├── tools/                     # ---- Agent Tools (15+) ----
+│   │   │   ├── __init__.py
+│   │   │   ├── base_tool.py           # BaseTool abstract class
+│   │   │   ├── rag_tool.py            # document_search — query indexed docs
+│   │   │   ├── web_search_tool.py     # web_search — DuckDuckGo search
+│   │   │   ├── web_agent_tool.py      # web_agent — Playwright page extraction
+│   │   │   ├── news_api_tool.py       # news_search — NewsAPI integration
+│   │   │   ├── relevance_evaluator.py # Relevance scoring for search results
+│   │   │   ├── calculator_tool.py     # calculator — math expressions
+│   │   │   ├── code_executor_tool.py  # python_executor — sandboxed Python
+│   │   │   ├── file_ops_tool.py       # file_operations — read/write files
+│   │   │   ├── doc_management_tool.py # document_manager — manage uploads
+│   │   │   ├── qa_analysis_tool.py    # QA analysis & coverage
+│   │   │   ├── bug_report_tool.py     # Bug report generation
+│   │   │   ├── test_strategy_tool.py  # Test strategy creation
+│   │   │   ├── requirements_extractor_tool.py  # Requirement extraction
+│   │   │   ├── traceability_matrix_tool.py     # Req→Test traceability
+│   │   │   ├── bdd_generator_tool.py  # BDD/Gherkin scenario generation
+│   │   │   └── test_data_generator_tool.py     # Test data generation
+│   │   │
+│   │   ├── memory/                    # ---- Memory System ----
+│   │   │   ├── __init__.py
+│   │   │   ├── conversation_memory.py # Tier 1: Session short-term memory
+│   │   │   ├── episodic_memory.py     # Tier 2: Cross-session long-term memory
+│   │   │   └── memory_manager.py      # Unified coordinator for both tiers
+│   │   │
+│   │   └── reflection/                # ---- Self-Reflection ----
+│   │       ├── __init__.py
+│   │       ├── reflection_module.py   # Agent self-evaluation
+│   │       └── learning_module.py     # Pattern extraction & optimization
+│   │
+│   ├── database/                      # ========== PERSISTENCE ==========
+│   │   ├── __init__.py
+│   │   ├── models.py                  # Session, Message, Memory dataclasses
+│   │   ├── checkpoint_backend.py      # Tier 3: LangGraph checkpoint (PostgreSQL)
+│   │   ├── postgres_backend.py        # PostgreSQL CRUD operations
+│   │   └── session_manager.py         # Session lifecycle management
+│   │
+│   ├── policy/                        # ========== POLICY ENGINE ==========
+│   │   ├── __init__.py
+│   │   ├── policy_engine.py           # Rule evaluation & enforcement
+│   │   ├── policy_definitions.py      # Policy types (tool, rate, content, cost)
+│   │   └── policy_store.py            # Policy persistence
+│   │
+│   ├── task_queue/                    # ========== REDIS QUEUE ==========
+│   │   ├── __init__.py
+│   │   ├── task_queue.py              # Queue management & submission
+│   │   ├── task_models.py             # Task dataclasses
+│   │   ├── scheduler.py              # Task scheduling
+│   │   └── worker.py                  # Worker pool
+│   │
+│   └── ui/                            # ========== STREAMLIT UI ==========
+│       ├── __init__.py
+│       ├── streamlit_app_agent.py     # Main application (2433 lines)
+│       ├── state_manager.py           # Session state initialization
+│       ├── components.py              # Basic UI components
+│       ├── enhanced_components.py     # Advanced components (cards, dashboards)
+│       ├── styles.py                  # CSS styling
+│       ├── input_validation.py        # Input sanitization & validation
+│       ├── document_handler.py        # Document upload handling
+│       ├── url_handler.py             # URL processing
+│       └── auto_index_integration.py  # Auto-indexing UI
+│
+├── scripts/
+│   ├── setup/
+│   │   ├── init_database.py           # PostgreSQL table creation
+│   │   └── migrate_to_pinecone.py     # FAISS → Pinecone migration
+│   ├── maintenance/
+│   │   └── reindex_documents.py       # Rebuild vector store
+│   └── monitoring/
+│       └── check_backend_status.py    # Health check all services
+│
+├── tests/
+│   ├── conftest.py                    # Pytest fixtures
+│   ├── unit/                          # Unit tests
+│   │   ├── test_config.py
+│   │   ├── test_embeddings.py
+│   │   ├── test_rag_chain_unit.py
+│   │   ├── test_memory.py
+│   │   ├── test_tools.py
+│   │   └── test_vector_store.py
+│   └── integration/                   # Integration tests
+│       ├── test_agent_system.py
+│       ├── test_manager_agent.py
+│       ├── test_manager_features.py
+│       ├── test_qa_tools.py
+│       ├── test_qa_generation.py
+│       ├── test_rag_chain.py
+│       ├── test_auto_index.py
+│       ├── test_conversation_memory_fix.py
+│       ├── test_critical_fixes.py
+│       ├── test_relevance_filter.py
+│       └── test_streamlit_integration.py
+│
+├── docs/                              # Extended documentation
+│   ├── CONFIGURATION.md
+│   ├── AUTO_INDEXING_GUIDE.md
+│   ├── CHECKPOINT_GUIDE.md
+│   ├── DEPLOYMENT_GUIDE.md
+│   ├── EXTERNAL_SERVICES_SETUP.md
+│   ├── OBSERVABILITY_GUIDE.md
+│   ├── PINECONE_MIGRATION_GUIDE.md
+│   ├── POLICY_ENGINE_GUIDE.md
+│   ├── POSTGRES_SETUP.md
+│   ├── QA_FEATURES_REFERENCE.md
+│   ├── QA_TOOLS_GUIDE.md
+│   ├── REDIS_QUEUE_GUIDE.md
+│   ├── RELEVANCE_FILTERING.md
+│   ├── STREAMLIT_DEPLOYMENT.md
+│   └── WEB_SCRAPING_ENHANCEMENTS.md
+│
+├── data/                              # Runtime data (gitignored)
+│   ├── documents/                     # Source docs (PDF, DOCX, TXT, MD)
+│   ├── vector_store/                  # FAISS index files
+│   ├── episodic_memory/               # Session JSON files (long-term memory)
+│   ├── learning/                      # learning_data.pkl (tool stats)
+│   ├── reflections/                   # reflections.jsonl (agent evaluations)
+│   ├── workspace/                     # File operations sandbox
+│   └── .index_metadata.json           # Auto-indexing metadata
+│
+├── .env / .env.example                # Environment configuration
+├── requirements.txt                   # Python dependencies
+├── Makefile                           # Dev commands (run, test, clean, etc.)
+├── run.command                        # macOS launcher (double-click)
+├── run.bat                            # Windows launcher (double-click)
+├── setup.sh / setup.bat               # First-time setup scripts
+├── run_agent_ui.py                    # Alternative UI launcher
+└── README.md
+```
 
-| Path | Purpose | Key Files |
-|------|---------|-----------|
-| `src/` | Core application code | All Python modules |
-| `src/agent/` | Agent system (Phase 3+4) | `agent_executor_v3.py`, `tool_registry.py` |
-| `src/agent/tools/` | Tool implementations | 7 tool files (see below) |
-| `src/agent/memory/` | Memory system | `memory_manager.py`, `episodic_memory.py` |
-| `src/agent/reflection/` | Self-reflection & learning | `reflection_module.py`, `learning_module.py` |
-| `src/database/` | PostgreSQL persistence | `models.py`, `session_manager.py`, `checkpoint_backend.py` |
-| `src/policy/` | Policy engine | `policy_engine.py`, `default_policies.yaml` |
-| `src/queue/` | Redis message queue | `task_queue.py`, `worker.py`, `scheduler.py` |
-| `src/ui/` | Streamlit UI | `streamlit_app_agent.py`, `state_manager.py` |
-| `data/` | Runtime data storage | `documents/`, `vector_store/`, `episodic_memory/` |
-| `data/documents/` | Sample documents | 6 markdown files on AI/RAG topics |
-| `data/uploaded/` | User-uploaded documents | Created at runtime |
+### Makefile Commands
 
-Evidence: Directory tree from `find` command output
-
-### Most Important Files
-
-**Entry Points:**
-- [run_agent_ui.py](run_agent_ui.py) - Streamlit agent UI launcher (recommended)
-- [src/ui/streamlit_app_agent.py](src/ui/streamlit_app_agent.py) - Agent UI implementation
-- [queue_worker.py](queue_worker.py) - Redis background worker
-
-**Core Pipeline:**
-- [src/rag_chain.py](src/rag_chain.py) - RAG query pipeline (retrieve + generate)
-- [src/document_manager.py](src/document_manager.py) - Unified vector store interface
-- [src/vector_store.py](src/vector_store.py) - FAISS vector store manager
-- [src/embeddings.py](src/embeddings.py) - Embedding generation
-
-**Agent System:**
-- [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py) - Agent orchestration with LangGraph
-- [src/agent/tool_registry.py](src/agent/tool_registry.py) - Tool management
-- [src/agent/memory/memory_manager.py](src/agent/memory/memory_manager.py) - Memory coordination
-
-**Configuration:**
-- [src/config.py](src/config.py) - Central configuration from environment variables
-- [.env](.env) - Environment variables (**NEVER COMMIT WITH REAL KEYS**)
+```bash
+make run          # Start the Streamlit app
+make test         # Run all tests
+make test-quick   # Run quick unit tests only
+make setup        # Initialize database
+make reindex      # Reindex all documents
+make check        # Check backend service status
+make clean        # Clean cache files
+make lint         # Check code style
+```
 
 ---
 
-## Key Flows
+## Core Components Deep Dive
 
-### Flow 1: Document Upload & Indexing
+### 1. RAG Chain
 
-**Trigger:** User uploads PDF/DOCX in Streamlit UI
+**File:** `src/rag_chain.py` (~762 lines)
+**Class:** `RAGChain`
 
-**Steps:**
-1. `src/ui/document_handler.py` → `handle_file_upload()` saves file to `data/uploaded/`
-2. `src/document_loader.py` → `load_documents()` parses file (PyPDF for PDF, python-docx for DOCX)
-3. `RecursiveCharacterTextSplitter` chunks text (800 chars, 100 overlap)
-4. `src/embeddings.py` → `EmbeddingManager.embed_documents()` generates embeddings via HuggingFace
-5. `src/vector_store.py` → `VectorStoreManager.create_vector_store()` adds to FAISS with rate limiting (batch_size=3, delay=2s)
-6. FAISS index saved to `data/vector_store/`
+The core retrieval-augmented generation pipeline. Retrieves relevant document chunks via vector similarity search, optionally reranks them, and passes them to an LLM to generate grounded answers.
 
-**Data Transformations:**
+**Initialization:**
+- Creates LLM instance (Groq or Google Gemini based on `LLM_PROVIDER`)
+- Sets up prompt templates for QA, test case generation, and pytest code generation
+- Lazy-loads cross-encoder reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+
+**Key Methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `ask(question, top_k=5)` | Main query — retrieve + rerank + generate answer |
+| `retrieve_context(query, k)` | Vector similarity search in FAISS/Pinecone |
+| `format_context(docs)` | Format retrieved documents for LLM prompt |
+| `generate_test_cases(requirements, k)` | Generate test cases from requirements |
+| `generate_pytest_code(requirements, k)` | Generate pytest code from requirements |
+
+**Pipeline:**
 ```
-PDF bytes → PyPDF → text string → chunks (List[Document])
-→ embeddings (List[List[float]]) → FAISS index
-```
-
-**Failure Modes:**
-- File parsing error → returns error message, doesn't crash
-- Embedding API rate limit → batch processing with delays
-- FAISS index corruption → auto-loads from disk on restart (fixed in commit af1b006)
-
-**Evidence:** [src/document_loader.py](src/document_loader.py), [src/vector_store.py](src/vector_store.py#L27-L38), [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md#L26-L51)
-
-### Flow 2: RAG Query
-
-**Trigger:** User submits question in UI
-
-**Steps:**
-1. `streamlit_app_agent.py` → user input → `agent.execute(query)`
-2. `RAGChain.ask(question)` in [src/rag_chain.py](src/rag_chain.py#L197-L289)
-3. `retrieve_context()` → FAISS similarity search (top_k=3 by default)
-4. `format_context()` → joins chunks with source metadata
-5. `generate_answer()` → LLM call with prompt template
-6. Returns `{answer, context, sources}`
-
-**LLM Prompt:**
-```
-System: You are a helpful AI assistant that answers questions based on provided context.
-Instructions:
-- Use ONLY the information from the context below
-- If context doesn't contain info, say "I don't have enough information"
-- Mention which source you used
-Context: [Retrieved chunks]
-Human: [User question]
+Query → Embed → Vector Search (top_k) → Rerank (cross-encoder) → Format Context → LLM → Answer + Sources
 ```
 
-**Performance:**
-- Vector search: ~10-50ms for 1000 documents
-- LLM generation: 500-2000ms (Groq is 10-100x faster than OpenAI)
-- Total: typically < 3 seconds
-
-**Evidence:** [src/rag_chain.py](src/rag_chain.py#L88-L289)
-
-### Flow 3: Agent Tool Execution
-
-**Trigger:** Complex query like "what's the latest AI news?"
-
-**Steps:**
-1. `AgentExecutorV3.execute()` in [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py)
-2. LangGraph state machine: `understand → route → execute → synthesize → reflect`
-3. **Understand phase:** LLM analyzes query with memory context
-4. **Route phase:** LLM selects tool(s) based on descriptions OR "none" for conversational queries
-   - Tool descriptions passed in prompt: "web_search: Search the internet for current information..."
-   - **NEW:** "none: Use when answering questions about THIS CONVERSATION..."
-5. **Execute phase:** Tool runs (e.g., `web_search.execute()` → DuckDuckGo API) OR skipped if "none"
-6. **Synthesize phase:** LLM generates final answer from tool results OR memory context
-7. **Reflect phase:** `ReflectionModule` evaluates tool selection, `LearningModule` records success/failure
-
-**Auto-Chaining Example:**
-Query: "latest AI news" → web_search (gets URLs) → agent sees URLs in result → automatically calls web_agent (extracts content) → synthesizes answer
-
-**Natural Conversation Example:**
-Query: "tell me about our previous conversation" → route selects "none" → synthesize from memory context (no tools) → faster response (3-5s)
-
-**Evidence:** [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py#L143-L295), [src/agent/agent_executor_v3.py:209-236](src/agent/agent_executor_v3.py#L209-L236)
-
-### Flow 3.5: Natural Conversation (Memory-Based Answers)
-
-**Trigger:** Conversational query like "what did we discuss earlier?" or "tell me about our previous conversation"
-
-**Steps:**
-1. **Route phase:** LLM recognizes conversational query
-   - Prompt includes rule: "If user asks about 'our conversation', 'what we discussed', 'earlier', 'previous messages' → use 'none'"
-2. **Route phase:** Sets `selected_tool = None` and `answer_from_memory = True`
-3. **Synthesis phase:** Checks for `answer_from_memory` flag
-4. **Memory-based synthesis:** Uses LLM to generate answer from `memory_context`
-   - Prompt: "Based on the conversation history below, answer the user's question naturally..."
-5. **Skip tool execution entirely** → faster response (3-5s instead of 8-10s)
-
-**Key Insight:** Not all queries need tools. Conversational queries can be answered directly from memory, avoiding unnecessary tool overhead.
-
-**Evidence:** [src/agent/agent_executor_v3.py:229-247](src/agent/agent_executor_v3.py#L229-L247), [src/agent/agent_executor_v3.py:485-536](src/agent/agent_executor_v3.py#L485-L536)
-
-### Flow 4: Memory Persistence
-
-**Trigger:** Session ends or periodic saves
-
-**Steps:**
-1. Conversation messages stored in `MemoryManager.conversation_memory` (in-memory buffer)
-2. On finalize: `memory_manager.finalize_session()` creates Episode
-3. Episode serialized to JSON and saved to `data/episodic_memory/<session_id>.json`
-4. Learning data serialized to pickle: `data/learning/learning_data.pkl`
-5. Reflection history appended to JSONL: `data/reflections/reflections.jsonl`
-
-**Reload on Restart:**
-- `EpisodicMemory.__init__()` → `_load_episodes()` reads all JSON files
-- `LearningModule.__init__()` → `_load_data()` unpickles learning data
-- `ReflectionModule.__init__()` → `_load_reflections()` reads JSONL line-by-line
-
-**Evidence:** [src/agent/memory/episodic_memory.py](src/agent/memory/episodic_memory.py#L79-L132), [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md#L59-L152)
-
-### Flow 5: Policy Enforcement
-
-**Trigger:** Any agent action (tool call, LLM request)
-
-**Steps:**
-1. `PolicyEngine.evaluate()` in [src/policy/policy_engine.py](src/policy/policy_engine.py)
-2. Loads policies from [src/policy/default_policies.yaml](src/policy/default_policies.yaml)
-3. Evaluates in priority order (200 → 150 → 100 → 50)
-4. Checks: tool whitelist/blacklist, rate limits, content filters, cost limits
-5. Actions: ALLOW, DENY, WARN, THROTTLE, REQUIRE_APPROVAL
-6. Violations logged to PostgreSQL `policy_violations` table (if enabled)
-
-**Example Policy:**
-```yaml
-tool_policies:
-  - rule_id: block_dangerous_tools
-    action: deny
-    priority: 200
-    blocked_tools:
-      - system_command
-      - execute_shell
-```
-
-**Evidence:** [POLICY_ENGINE_GUIDE.md](POLICY_ENGINE_GUIDE.md), [src/policy/default_policies.yaml](src/policy/default_policies.yaml)
+**Returns:** `{ question, answer, context, sources, documents }`
 
 ---
 
-## Configuration
+### 2. Agent Executor (LangGraph State Machine)
 
-### All Config Sources
+**File:** `src/agent/agent_executor_v3.py` (~1113 lines)
+**Class:** `AgentExecutorV3`
 
-1. **Environment variables** (`.env` file) - see [src/config.py](src/config.py)
-2. **Policy YAML** - [src/policy/default_policies.yaml](src/policy/default_policies.yaml)
-3. **Runtime overrides** - Streamlit sidebar widgets
+The brain of the system. Uses LangGraph's `StateGraph` to orchestrate a multi-step workflow: understand the query, pick the right tool, execute it, synthesize an answer, and reflect on the decision.
 
-### Core Settings
+**Constructor Parameters:**
 
-| Key | Meaning | Default | Where Used |
-|-----|---------|---------|------------|
-| `GROQ_API_KEY` | Groq API authentication | *required* | [src/rag_chain.py:69](src/rag_chain.py#L69) |
-| `LLM_PROVIDER` | LLM backend (groq/google) | `groq` | [src/config.py:19](src/config.py#L19) |
-| `GROQ_MODEL` | Model name | `llama-3.3-70b-versatile` | [src/config.py:22](src/config.py#L22) |
-| `EMBEDDING_PROVIDER` | Embedding backend | `huggingface` | [src/config.py:28](src/config.py#L28) |
-| `EMBEDDING_MODEL` | HF model | `sentence-transformers/all-MiniLM-L6-v2` | [src/config.py:29-32](src/config.py#L29-L32) |
-| `CHUNK_SIZE` | Text chunk size | `800` | [src/config.py:35](src/config.py#L35) |
-| `CHUNK_OVERLAP` | Chunk overlap | `100` | [src/config.py:36](src/config.py#L36) |
-| `TOP_K_RESULTS` | Retrieved chunks | `3` | [src/config.py:39](src/config.py#L39) |
-| `USE_PINECONE` | Use Pinecone vs FAISS | `false` | [src/config.py:45](src/config.py#L45) |
-| `DATABASE_URL` | PostgreSQL connection | `None` | [src/config.py:101](src/config.py#L101) |
-| `REDIS_URL` | Redis connection | `redis://localhost:6379/0` | [src/config.py:113](src/config.py#L113) |
-| `ENABLE_OBSERVABILITY` | OpenTelemetry tracing | `false` | [src/config.py:122](src/config.py#L122) |
-
-### Environment-Specific
-
-**Development (Optimized for Speed):**
-```bash
-# Agent Settings (Fast Mode)
-AGENT_ENABLED=true
-AGENT_MODE=react  # Fast single-step reasoning
-AGENT_MAX_ITERATIONS=3  # Reduced from 10
-AGENT_TIMEOUT=30  # Reduced from 120
-
-# Memory Settings
-MEMORY_ENABLED=true
-MEMORY_WINDOW_SIZE=5
-MEMORY_SUMMARY_FREQUENCY=10
-
-# Tool Settings
-WEB_SEARCH_ENABLED=true
-CALCULATOR_ENABLED=true
-CODE_EXECUTOR_ENABLED=false  # Safety
-FILE_OPS_ENABLED=true
-
-# Safety Settings
-REFLECTION_ENABLED=false  # Disabled for speed (can enable for quality)
-HALLUCINATION_DETECTION=false
-USE_POLICY_ENGINE=false  # Lenient during dev
-
-# Database (Optimized)
-USE_POSTGRES=true
-USE_CHECKPOINTS=false  # Disabled for faster responses
-DATABASE_URL=postgresql://postgres:localpass@localhost:5433/rag_chatbot
+```python
+AgentExecutorV3(
+    llm,                          # LLM instance (Groq/Gemini)
+    tool_registry: ToolRegistry,  # All available tools
+    config,                       # Config object
+    enable_memory=True,           # Tier 1+2 memory
+    enable_reflection=True,       # Self-reflection after each query
+    enable_checkpoints=True,      # Tier 3 PostgreSQL checkpoints
+    enable_policy_engine=True     # Policy enforcement
+)
 ```
 
-**Production (Quality + Observability):**
-```bash
-# Agent Settings
-AGENT_MODE=hybrid  # Better reasoning (slower)
-AGENT_MAX_ITERATIONS=10
-AGENT_TIMEOUT=120
+**LangGraph Nodes & Edges:**
 
-# Safety & Quality
-REFLECTION_ENABLED=true  # Enable self-improvement
-USE_POLICY_ENGINE=true
-USE_CHECKPOINTS=true
-
-# Infrastructure
-USE_POSTGRES=true
-USE_REDIS_QUEUE=true
-ENABLE_OBSERVABILITY=true
-OTEL_EXPORTER_TYPE=otlp
-OTEL_EXPORTER_ENDPOINT=http://jaeger:4317
+```
+┌──────────────┐
+│  understand   │  ← Add query to memory, load context
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│    route      │  ← LLM selects tool (or "none" for memory answer)
+└──────┬───────┘
+       │
+       ├── tool == None ──▶ ┌────────┐
+       │                    │ finish  │ ──▶ synthesize
+       │                    └────────┘
+       │
+       ├── tool selected ──▶ ┌─────────┐
+       │                     │ execute  │ ← Run tool, policy check
+       │                     └────┬────┘
+       │                          │
+       │                          ▼
+       │                    ┌─────────────┐
+       │                    │ synthesize   │ ← LLM generates final answer
+       │                    └──────┬──────┘
+       │                           │
+       │                           ▼
+       │                    ┌─────────────┐
+       │                    │  reflect     │ ← Evaluate decision, record learning
+       │                    └──────┬──────┘
+       │                           │
+       └───────────────────────────▼
+                                  END
 ```
 
-**Dev Assist Tool (Quality-Focused):**
-```bash
-# Prioritize quality over speed for dev tasks
-AGENT_MODE=hybrid
-AGENT_MAX_ITERATIONS=5
-REFLECTION_ENABLED=true  # Quality matters for test case generation
-MEMORY_ENABLED=true
-MEMORY_WINDOW_SIZE=10  # More context for dev tasks
-```
+**Core Node Methods:**
 
-Evidence: [src/config.py](src/config.py#L11-L144), [.env](.env)
+| Node | Method | What It Does |
+|------|--------|--------------|
+| understand | `_understand_query()` | Adds user message to memory, loads conversation + episodic context |
+| route | `_route_to_tool()` | LLM picks the best tool from available list (or "none") |
+| — | `_should_continue()` | Conditional edge: go to execute or finish |
+| execute | `_execute_tool()` | Runs selected tool with policy checks, records timing |
+| synthesize | `_synthesize_answer()` | LLM synthesizes clean response from tool result + memory |
+| reflect | `_reflect_on_interaction()` | Self-evaluation, pattern recording, learning updates |
+
+**Answer Synthesis (in synthesize node):**
+
+For `web_search`, `web_agent`, and `news_api` results, the raw tool output is passed through an LLM synthesis step that converts raw snippets into 3 concise, readable paragraphs. Other tools (calculator, document_search, etc.) return their results directly.
+
+**Tool Selection Logic (in route node):**
+
+| Query Type | Tool Selected | Reason |
+|------------|---------------|--------|
+| "What does our architecture doc say about X?" | `document_search` | Knowledge base query |
+| "Latest AI news" | `web_agent` | Real-time web info with full page extraction |
+| "Summarize this URL: https://..." | `web_agent` | Full page extraction |
+| "Calculate 15% of $2500" | `calculator` | Math operation |
+| "Generate BDD scenarios for login" | `bdd_generator` | QA tool |
+| "What did we discuss earlier?" | `none` | Memory-based answer (no tool) |
 
 ---
 
-## API & Interfaces
+### 3. Agent State
 
-### HTTP Endpoints (Streamlit)
+**File:** `src/agent/agent_state.py`
+**Type:** `TypedDict` (AgentState)
 
-The system doesn't expose REST APIs directly. Streamlit runs on port 8501 by default.
+All data flows through this state object as it passes between LangGraph nodes.
 
-**Access:**
-```bash
-streamlit run run_agent_ui.py --server.port 8501
-# Opens browser to http://localhost:8501
+```python
+AgentState = {
+    "messages": Sequence[BaseMessage],        # LangChain message history
+    "query": str,                             # Current user query
+    "final_answer": str,                      # Generated response
+    "current_phase": str,                     # Current execution phase
+    "iteration": int,                         # Current iteration number
+    "max_iterations": int,                    # Safety limit (default 10)
+    "selected_tool": Optional[str],           # Tool chosen by router
+    "tools_used": List[str],                  # All tools used this query
+    "tool_results": List[Dict[str, Any]],     # Outputs from tools
+    "needs_retry": bool,                      # Should retry flag
+    "last_error": Optional[str],              # Last error message
+    "memory_context": Optional[str],          # Injected memory context
+    "conversation_messages": Optional[List],  # Serializable messages (for checkpoints)
+    "answer_from_memory": bool,               # True if answered without tools
+    "start_time": Optional[float],            # Query start timestamp
+    "execution_metadata": Dict[str, Any]      # Extra metadata
+}
 ```
 
-**UI Endpoints (pages):**
-- `/` - Main chat interface
-- No multi-page support currently (single-page app)
+---
 
-### Python API
+### 4. Tool Registry & Tools
 
-**Basic RAG:**
+**Registry File:** `src/agent/tool_registry.py`
+**Class:** `ToolRegistry`
+
+Central registry managing all tools. Tools register themselves; the agent queries the registry for available tools and descriptions.
+
+**Key Methods:**
+- `register(tool)` — Add a tool instance
+- `get_tool(name)` — Retrieve by name
+- `get_all_tools()` — List all tools
+- `get_tool_descriptions()` — Formatted list for LLM prompts
+- `get_tool_names()` — List of names
+
+**Base Class:** `BaseTool` (`src/agent/tools/base_tool.py`)
+- Abstract properties: `name`, `description`
+- Abstract method: `_run(*args, **kwargs) -> str`
+- Concrete wrapper: `run()` — adds timing, error handling, returns `ToolResult`
+
+**Complete Tool List:**
+
+| # | Tool Name | File | Purpose | Enabled By Default |
+|---|-----------|------|---------|-------------------|
+| 1 | `document_search` | `rag_tool.py` | Search indexed documents via RAG | Yes |
+| 2 | `web_search` | `web_search_tool.py` | DuckDuckGo web search with dedup | Yes |
+| 3 | `web_agent` | `web_agent_tool.py` | Playwright full-page extraction | Yes |
+| 4 | `news_search` | `news_api_tool.py` | NewsAPI current events | Yes (needs key) |
+| 5 | `calculator` | `calculator_tool.py` | Math expressions (safe eval) | Yes |
+| 6 | `python_executor` | `code_executor_tool.py` | Sandboxed Python execution | **No** (safety) |
+| 7 | `file_operations` | `file_ops_tool.py` | Read/write in workspace dir | Yes |
+| 8 | `document_manager` | `doc_management_tool.py` | Manage uploaded documents | Yes |
+| 9 | `qa_analysis` | `qa_analysis_tool.py` | QA coverage & risk analysis | Yes |
+| 10 | `bug_report` | `bug_report_tool.py` | Generate structured bug reports | Yes |
+| 11 | `test_strategy` | `test_strategy_tool.py` | Create test strategies | Yes |
+| 12 | `requirements_extractor` | `requirements_extractor_tool.py` | Extract requirements from docs | Yes |
+| 13 | `traceability_matrix` | `traceability_matrix_tool.py` | Req → Test mapping | Yes |
+| 14 | `bdd_generator` | `bdd_generator_tool.py` | Gherkin/BDD scenario generation | Yes |
+| 15 | `test_data_generator` | `test_data_generator_tool.py` | Test data & edge cases | Yes |
+| — | `relevance_evaluator` | `relevance_evaluator.py` | Internal: scores search relevance | Internal |
+
+---
+
+### 5. Memory System (3-Tier)
+
+#### Tier 1: Conversation Memory (session-scoped)
+
+**File:** `src/agent/memory/conversation_memory.py`
+**Class:** `ConversationMemory`
+
+Stores the current session's messages in-memory. Automatically summarizes older messages when the count exceeds a threshold.
+
+```python
+ConversationMemory(
+    session_id="uuid",           # Auto-generated if not provided
+    max_messages=10,             # Keep last 10 messages in full
+    summarize_threshold=20       # Summarize when >20 messages total
+)
+```
+
+**Key Methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `add_message(role, content, metadata)` | Store a message (user/assistant/system) |
+| `get_recent_messages(n)` | Get last N messages |
+| `get_context_string()` | Format as "[Previous summary]\n[Recent conversation]" |
+| `get_last_user_message()` | Most recent user input |
+| `_auto_summarize()` | Triggered when messages > threshold; prunes old messages |
+| `to_dict()` / `from_dict()` | Serialize/deserialize (for checkpoint persistence) |
+| `clear()` | Reset all messages |
+| `get_stats()` | Session statistics |
+
+**Auto-Summarization Flow:**
+```
+Messages exceed threshold (20)
+  → Extract user queries from old messages
+  → Extract tools used from metadata
+  → Generate text summary: "User asked about: X, Y, Z. Used tools: A, B"
+  → Keep only last max_messages (10)
+  → Store summary for future context
+```
+
+**Data Stored per Message:**
+```python
+Message(
+    role="user",                        # user | assistant | system
+    content="What is RAG?",
+    timestamp=datetime.now(),
+    metadata={"tools_used": ["document_search"]}
+)
+```
+
+#### Tier 2: Episodic Memory (cross-session, persisted to disk)
+
+**File:** `src/agent/memory/episodic_memory.py`
+**Class:** `EpisodicMemory`
+
+Persists summaries of past conversations as JSON files. Survives app restarts. Enables the agent to recall what a user asked days or weeks ago.
+
+**Storage:** `data/episodic_memory/{session_id}.json`
+
+**Episode Data Structure:**
+```python
+Episode(
+    session_id="480de419-...",
+    timestamp=datetime(2026, 2, 5),
+    summary="User asked about: latest AI news. Tools used: web_agent",
+    user_queries=["tell me latest ai news", "latest ai news"],
+    tools_used=["web_agent"],
+    outcomes=["success"],
+    key_entities=["AI", "news"],
+    user_preferences={"prefers_detailed_answers": True}
+)
+```
+
+**Key Methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `add_episode(episode)` | Store and persist to JSON |
+| `create_episode_from_conversation(...)` | Build episode from session data |
+| `search_episodes(query, max_results=5)` | Keyword search with relevance scoring |
+| `get_recent_episodes(n=5)` | Get N most recent sessions |
+| `get_episodes_by_tool(tool_name)` | Find sessions that used a specific tool |
+| `get_aggregated_preferences()` | Aggregate user preferences across all sessions |
+| `get_tool_usage_stats()` | Tool usage frequency across all sessions |
+| `clear_old_episodes(days=30)` | Cleanup old data |
+
+**Search Scoring:**
+- Match in summary → 3 points
+- Match in user queries → 2 points
+- Match in key entities → 1 point
+- Results sorted by score (descending), then timestamp (descending)
+
+#### Tier 3: Checkpoint Storage (crash recovery via PostgreSQL)
+
+**File:** `src/database/checkpoint_backend.py`
+**Class:** `CheckpointManager`
+
+Saves the full agent execution state to PostgreSQL at each LangGraph node. If the app crashes mid-query, the conversation can be resumed from the last checkpoint.
+
+**Requirements:** `USE_POSTGRES=true` + `USE_CHECKPOINTS=true` + valid `DATABASE_URL`
+
+**Key Methods:**
+- `get_checkpointer()` — Returns `PostgresSaver` for LangGraph graph compilation
+- `is_available()` — Check if PostgreSQL is configured and reachable
+- `cleanup()` — Close connections
+
+#### Memory Manager (Coordinator)
+
+**File:** `src/agent/memory/memory_manager.py`
+**Class:** `MemoryManager`
+
+Single entry point that coordinates Tier 1 + Tier 2. No external code should directly access `ConversationMemory` or `EpisodicMemory`.
+
+```python
+MemoryManager(
+    session_id=None,                # Auto-generated UUID
+    storage_path=None,              # Default: data/episodic_memory/
+    max_conversation_messages=10
+)
+```
+
+**Key Methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `add_user_message(content, metadata)` | → ConversationMemory |
+| `add_assistant_message(content, tools_used, metadata)` | → ConversationMemory |
+| `get_conversation_context()` | Current session formatted context |
+| `get_relevant_history(query)` | Search episodic memory for past conversations |
+| `get_full_context(query, include_episodic=True)` | **Combined**: past episodes + current session |
+| `finalize_session(summary, outcomes, entities)` | End session → save as Episode to disk |
+| `search_past_conversations(query)` | Direct episodic search |
+| `get_user_preferences()` | Aggregated preferences |
+| `clear_conversation()` | Clear session (keep episodic) |
+| `clear_all_memory()` | Clear everything (use with caution) |
+
+**`get_full_context()` output example:**
+
+```
+[Relevant past conversations]
+1. 2026-01-15: User asked about deployment strategies. Tools used: web_search
+   Topics: kubernetes, docker
+
+[Previous conversation summary]
+User asked about: setting up Redis. Used tools: rag_search
+
+[Recent conversation]
+User: How do I connect Redis to my Flask app?
+Assistant: You can use the flask-redis extension...
+User: What about caching?
+```
+
+---
+
+### 6. Reflection & Learning System
+
+#### Reflection Module
+
+**File:** `src/agent/reflection/reflection_module.py`
+**Class:** `ReflectionModule`
+
+After each query, the agent evaluates its own performance: Did it pick the right tool? Was the answer good? What could be improved?
+
+**Reflection Types** (enum):
+- `TOOL_SELECTION` — Was the right tool chosen?
+- `TOOL_EXECUTION` — Did the tool run correctly?
+- `ANSWER_QUALITY` — Was the answer helpful?
+- `ERROR_ANALYSIS` — What went wrong?
+- `SESSION_SUMMARY` — End-of-session review
+
+**Key Methods:**
+- `evaluate_tool_selection(context) -> Reflection`
+- `evaluate_answer_quality(context) -> Reflection`
+- `analyze_error(error, context) -> Reflection`
+- `save_reflection(reflection)` — Persist to `data/reflections/reflections.jsonl`
+
+#### Learning Module
+
+**File:** `src/agent/reflection/learning_module.py`
+**Class:** `LearningModule`
+
+Extracts patterns from reflections and tool usage over time. Helps the agent make better decisions.
+
+**What It Tracks:**
+- Tool usage counters (how often each tool is used)
+- Tool success rates (success/failure per tool)
+- Tool response times (average duration per tool)
+- Query → tool mappings (which queries map to which tools)
+- Error patterns (recurring error categories)
+- Quality scores (answer quality over time)
+
+**Key Methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `record_tool_use(tool, success, duration)` | Log a tool execution |
+| `record_error(error_category, tool)` | Log an error |
+| `get_optimal_tool_for_query(query_type)` | Suggest best tool based on history |
+| `get_success_rate(tool)` | Success % for a tool |
+| `get_improvement_suggestions()` | Auto-generated improvement tips |
+
+**Storage:** `data/learning/learning_data.pkl` (Python pickle)
+
+---
+
+### 7. Manager Agent & Multi-Agent Orchestration
+
+**File:** `src/agent/manager_agent.py`
+**Class:** `ManagerAgent`
+
+For complex tasks, the manager agent breaks the work into subtasks and distributes them to specialized agents.
+
+**Architecture:**
+```
+ManagerAgent (planner + coordinator)
+  ├── QAAgentInterface → QA tools (test cases, BDD, bug reports)
+  ├── DevAgentInterface → Code generation & analysis
+  ├── DocAgentInterface → Documentation generation
+  └── SecurityAgentInterface → Security analysis (future)
+```
+
+**Specialized Agents** (`src/agent/specialized_agents.py`):
+- Each agent wraps a set of tools relevant to its domain
+- Has a `capabilities` property describing what it can do
+- Has an `execute(instruction, context)` method
+
+**Shared Types** (`src/agent/types.py`):
+
+| Type | Fields | Purpose |
+|------|--------|---------|
+| `AgentType` (enum) | QA, DEVELOPER, DOCUMENTATION, SECURITY, PERFORMANCE | Agent categories |
+| `AgentCapability` | name, description, tools, keywords | What an agent can do |
+| `TaskAssignment` | task_id, agent_type, instruction, priority, dependencies, status | A unit of work |
+| `ExecutionPlan` | goal, tasks, execution_order, estimated_steps | Manager's plan |
+| `ToolResult` | success, output, error, metadata | Tool execution result |
+
+---
+
+### 8. QA Pipeline
+
+**File:** `src/agent/qa_pipeline.py`
+**Class:** `QAPipeline`
+
+Automated multi-stage QA workflow that runs after document import.
+
+**Stages** (`PipelineStage` enum):
+
+```
+EXTRACT_REQUIREMENTS → GENERATE_TEST_CASES → ANALYZE_GAPS → COMPLETE
+```
+
+| Stage | What It Does |
+|-------|--------------|
+| Extract Requirements | Pull requirements from uploaded documents |
+| Generate Test Cases | Create test cases from extracted requirements |
+| Analyze Gaps | Identify coverage gaps and missing tests |
+| Complete | Pipeline finished |
+
+**Key Method:**
+```python
+result = pipeline.run(
+    topic="Login feature",
+    document_filter=None,
+    skip_gaps=False
+)
+# Returns: { requirements, test_cases, gap_analysis, errors }
+```
+
+**Callbacks:** Progress updates via callback function for UI progress bars.
+
+---
+
+### 9. Policy Engine
+
+**File:** `src/policy/policy_engine.py`
+**Class:** `PolicyEngine`
+
+Controls agent behavior, enforces rules, and maintains an audit trail.
+
+**Policy Types:**
+
+| Policy | What It Controls |
+|--------|-----------------|
+| `ToolPolicy` | Which tools can/cannot be used (allow/deny/warn/throttle) |
+| `RateLimitPolicy` | Requests per minute/hour/day, tokens per session |
+| `ContentPolicy` | Block inappropriate content via pattern matching |
+| `CostPolicy` | Spending limits per request/session/day |
+| `AccessPolicy` | User/role permissions, time-based access |
+
+**Key Method:**
+```python
+decision = policy_engine.evaluate_tool_usage(context)
+# decision.allowed = True/False
+# decision.action = ALLOW | DENY | WARN | THROTTLE | REQUIRE_APPROVAL
+# decision.message = "Explanation..."
+```
+
+**Enabled by:** `USE_POLICY_ENGINE=true`
+
+---
+
+### 10. Database & Checkpoint Persistence
+
+**Files:** `src/database/`
+
+| File | Class | Purpose |
+|------|-------|---------|
+| `models.py` | Session, Message, EpisodicMemory | Database model definitions |
+| `postgres_backend.py` | PostgresBackend | PostgreSQL CRUD operations |
+| `session_manager.py` | SessionManager | Session lifecycle (create, resume, end) |
+| `checkpoint_backend.py` | CheckpointManager | LangGraph state checkpointing |
+
+**Session Model Fields:**
+- `session_id`, `user_id`, `title`, `created_at`, `updated_at`, `metadata`, `is_active`
+
+**Message Model Fields:**
+- `message_id`, `session_id`, `role`, `content`, `timestamp`, `metadata`, `tool_calls`, `sources`
+
+---
+
+### 11. Observability & Monitoring
+
+**File:** `src/observability.py`
+**Class:** `ObservabilityManager` (singleton)
+
+OpenTelemetry instrumentation for distributed tracing and metrics.
+
+**Features:**
+- Traces RAG operations, agent execution, tool calls, LLM invocations
+- Span processors with `BatchSpanProcessor`
+- Context propagation across components
+
+**Exporters:**
+
+| Exporter | Use Case |
+|----------|----------|
+| Console | Development — print spans to terminal |
+| OTLP/gRPC | Production — send to Jaeger, Honeycomb, Datadog, Grafana |
+| Jaeger | Direct Jaeger exporter |
+
+**Key Methods:**
+- `get_tracer(name)` — Get tracer for a component
+- `trace_operation(name, attributes)` — Context manager for tracing
+- `record_metric(name, value, attributes)` — Record a metric
+
+**Enabled by:** `ENABLE_OBSERVABILITY=true`
+
+---
+
+### 12. Redis Task Queue
+
+**Files:** `src/task_queue/`
+
+Async task processing for heavy workloads.
+
+| File | Class | Purpose |
+|------|-------|---------|
+| `task_queue.py` | TaskQueue | Submit & manage tasks |
+| `task_models.py` | Task, TaskPriority | Task data structures |
+| `scheduler.py` | Scheduler | Task scheduling |
+| `worker.py` | Worker | Worker pool |
+
+**Usage:**
+```python
+from src.task_queue import TaskQueue, TaskPriority
+
+queue = TaskQueue()
+task_id = queue.submit_task(query="Analyze data", priority=TaskPriority.HIGH, user_id="user123")
+result = queue.get_result(task_id, timeout=60)
+```
+
+**Enabled by:** `USE_REDIS_QUEUE=true`
+
+---
+
+### 13. Streamlit UI
+
+**Main File:** `src/ui/streamlit_app_agent.py` (~2450 lines)
+
+**Page Config:**
+- Title: "QA Expert Assistant"
+- Icon: test tube emoji
+- Layout: wide
+- Sidebar: expanded
+
+**Tab-Based Layout:**
+
+The app uses a two-level tab structure so Chat and Tools are always accessible:
+
+```
+Top-level:  [ 💬 Chat ]  [ 🛠️ Tools & Features ]
+
+Inside "Tools & Features":
+  [ 🚀 Quick Start ] [ 🎯 QA Tools ] [ 📁 Documents ] [ 🧪 Test Generator ] [ ⚙️ Settings ]
+```
+
+- **Chat tab** — Conversation UI. Shows welcome message when empty, chat history when active. Chat input is always at the bottom.
+- **Tools & Features tab** — Contains all sub-tabs for QA tools, document management, test generation, and settings.
+
+Users can switch between Chat and Tools at any time without losing conversation state.
+
+**Major Functions:**
+
+| Function | Purpose |
+|----------|---------|
+| `configure_page()` | Page settings, CSS injection |
+| `initialize_agent_session_state()` | Setup session variables |
+| `initialize_agent_system()` | Lazy-init agent with all tools |
+| `get_or_create_agent()` | Get cached agent or initialize on first use |
+| `render_minimal_sidebar()` | Session stats, quick actions (Clear/Reset) |
+| `render_main_chat_agent()` | Top-level tab layout + chat rendering |
+| `render_welcome_message_agent()` | Feature sub-tabs (QA Tools, Documents, etc.) |
+| `handle_agent_query(prompt)` | Main query handler → `agent.execute()` |
+| `render_chat_message_agent(msg)` | Render a single chat message with styling |
+
+**Session State Variables:**
+```python
+st.session_state = {
+    "messages": [],                    # Chat history
+    "agent": None,                     # AgentExecutorV3 instance (lazy)
+    "agent_initialized": False,
+    "enable_memory": True,
+    "enable_reflection": True,
+    "conversation_thread_id": "uuid",
+    "session_queries": 0
+}
+```
+
+**Supporting UI Files:**
+
+| File | Purpose |
+|------|---------|
+| `state_manager.py` | Initialize defaults, cached RAG chain |
+| `enhanced_components.py` | Welcome cards, dashboards, QA panels |
+| `styles.py` | Custom CSS for modern dark theme |
+| `input_validation.py` | Input sanitization via `InputValidator` class |
+| `components.py` | Basic reusable components |
+
+---
+
+## Key Flows (End-to-End)
+
+### Flow 1: User Query → Agent Response
+
+```
+1. USER INPUT (Streamlit)
+   └─ streamlit_app_agent.py → process_user_query()
+   └─ Message added to st.session_state.messages
+
+2. AGENT EXECUTION (LangGraph state machine)
+   └─ agent_executor_v3.py → graph.invoke(state)
+
+   a. UNDERSTAND NODE
+      ├─ memory_manager.add_user_message(query)
+      ├─ context = memory_manager.get_full_context(query)
+      │   ├─ Search episodic memory for relevant past conversations
+      │   ├─ Get conversation summary (if exists)
+      │   └─ Get recent messages (last 10)
+      └─ state['memory_context'] = context
+
+   b. ROUTE NODE
+      ├─ LLM sees: query + tool descriptions + memory context
+      ├─ Outputs: tool name (or "none" for memory-only answer)
+      └─ state['selected_tool'] = chosen tool
+
+   c. CONDITIONAL: execute or finish?
+      ├─ If tool == None → skip to SYNTHESIZE (memory answer)
+      └─ If tool selected → continue to EXECUTE
+
+   d. EXECUTE NODE
+      ├─ Policy engine check (if enabled)
+      ├─ tool = tool_registry.get_tool(name)
+      ├─ result = tool.run(query)
+      ├─ learning_module.record_tool_use(name, success, duration)
+      └─ state['tool_results'].append(result)
+
+   e. SYNTHESIZE NODE
+      ├─ LLM generates response from tool result + memory context
+      ├─ memory_manager.add_assistant_message(answer, tools_used)
+      └─ state['final_answer'] = answer
+
+   f. REFLECT NODE (if enabled)
+      ├─ reflection_module.evaluate_tool_selection(context)
+      ├─ reflection_module.evaluate_answer_quality(context)
+      └─ learning_module records patterns
+
+3. RESPONSE DELIVERY
+   ├─ Display answer in Streamlit chat
+   ├─ Show sources (if RAG)
+   └─ Update session stats
+
+4. PERSISTENCE
+   ├─ Checkpoint state to PostgreSQL (if enabled)
+   └─ On session end: memory_manager.finalize_session() → saves Episode JSON
+```
+
+### Flow 2: Document Upload & Indexing
+
+```
+Upload file (Streamlit)
+  → Parse (PyPDF2, python-docx, or plain text)
+  → Chunk (RecursiveCharacterTextSplitter, 800 chars, 100 overlap)
+  → Embed (HuggingFace sentence-transformers/all-MiniLM-L6-v2)
+  → Store (FAISS local index or Pinecone cloud)
+  → Save index to disk
+```
+
+### Flow 3: QA Pipeline
+
+```
+Trigger pipeline (user clicks "Run QA")
+  → Stage 1: Extract requirements from uploaded docs
+  → Stage 2: Generate test cases from requirements
+  → Stage 3: Analyze gaps in coverage
+  → Return: { requirements, test_cases, gap_analysis }
+```
+
+---
+
+## Configuration Reference
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `GROQ_API_KEY` | Groq API key (free at console.groq.com) |
+
+### LLM
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `groq` | `groq` or `google` |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
+| `GEMINI_MODEL` | `gemini-2.0-flash-exp` | Google model name |
+| `LLM_TEMPERATURE` | `0.7` | Creativity (0.0–1.0) |
+| `LLM_MAX_TOKENS` | `2048` | Max response length |
+
+### Embeddings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBEDDING_PROVIDER` | `huggingface` | `huggingface` or `google` |
+| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
+| `GOOGLE_API_KEY` | — | Required if using Google embeddings |
+
+### RAG
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CHUNK_SIZE` | `800` | Characters per text chunk |
+| `CHUNK_OVERLAP` | `100` | Overlap between chunks |
+| `TOP_K_RESULTS` | `5` | Number of chunks retrieved |
+| `TOP_K_REQUIREMENTS` | `10` | Chunks for requirement queries |
+| `ENABLE_RERANKING` | `true` | Cross-encoder reranking |
+| `RERANK_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reranker model |
+| `RELEVANCE_THRESHOLD` | `0.3` | Minimum relevance score (0–1) |
+
+### Agent
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENT_ENABLED` | `true` | Enable agent system |
+| `AGENT_MODE` | `hybrid` | `react`, `plan-execute`, or `hybrid` |
+| `AGENT_MAX_ITERATIONS` | `10` | Max tool execution loops |
+| `AGENT_TIMEOUT` | `120` | Timeout in seconds |
+| `AGENT_VERBOSE` | `true` | Show reasoning in output |
+
+### Memory
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMORY_ENABLED` | `true` | Enable memory system |
+| `MEMORY_WINDOW_SIZE` | `10` | Recent messages to keep in full |
+| `MEMORY_SUMMARY_FREQUENCY` | `5` | How often to summarize |
+
+### Tools
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEB_SEARCH_ENABLED` | `true` | Enable web search |
+| `WEB_SEARCH_PROVIDER` | `duckduckgo` | `duckduckgo` or `tavily` |
+| `TAVILY_API_KEY` | — | Required if using Tavily |
+| `NEWSAPI_KEY` | — | Optional for news tool |
+| `CALCULATOR_ENABLED` | `true` | Enable calculator |
+| `CODE_EXECUTOR_ENABLED` | `false` | Enable Python executor (security risk) |
+| `FILE_OPS_ENABLED` | `true` | Enable file operations |
+
+### Vector Store
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_PINECONE` | `false` | Use Pinecone (else FAISS) |
+| `PINECONE_API_KEY` | — | Required if using Pinecone |
+| `PINECONE_INDEX_NAME` | `rag-agent` | Pinecone index name |
+| `PINECONE_NAMESPACE` | `""` | Pinecone namespace |
+| `PINECONE_METRIC` | `cosine` | cosine, euclidean, dotproduct |
+
+### Database
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_POSTGRES` | `false` | Enable PostgreSQL |
+| `USE_CHECKPOINTS` | `true` | Enable LangGraph checkpoints |
+| `DATABASE_URL` | — | Full connection string |
+| `POSTGRES_USER` | `postgres` | DB username |
+| `POSTGRES_PASSWORD` | `postgres` | DB password |
+| `POSTGRES_HOST` | `localhost` | DB host |
+| `POSTGRES_PORT` | `5432` | DB port |
+| `POSTGRES_DB` | `rag_chatbot` | DB name |
+
+### Policy & Queue
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_POLICY_ENGINE` | `true` | Enable policy enforcement |
+| `USE_REDIS_QUEUE` | `false` | Enable Redis task queue |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
+
+### Confluence
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CONFLUENCE_ENABLED` | `false` | Enable Confluence integration |
+| `CONFLUENCE_URL` | — | Confluence base URL |
+| `CONFLUENCE_USERNAME` | — | Confluence email |
+| `CONFLUENCE_API_TOKEN` | — | Confluence API token |
+| `CONFLUENCE_SPACE_KEY` | `DEFAULT` | Space to import from |
+
+### Observability
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_OBSERVABILITY` | `false` | Enable OpenTelemetry |
+| `OTEL_SERVICE_NAME` | `rag-agent` | Service name in traces |
+| `OTEL_ENVIRONMENT` | `development` | Environment label |
+| `OTEL_EXPORTER_TYPE` | `console` | `console`, `otlp`, or `jaeger` |
+| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | Exporter endpoint |
+| `TRACE_RAG_OPERATIONS` | `true` | Trace RAG pipeline |
+| `TRACE_AGENT_OPERATIONS` | `true` | Trace agent execution |
+| `TRACE_TOOL_CALLS` | `true` | Trace tool calls |
+| `TRACE_LLM_CALLS` | `true` | Trace LLM invocations |
+
+---
+
+## API Reference
+
+### RAG Chain (direct document Q&A)
+
 ```python
 from src.system_init import initialize_system
 
-# Initialize
 rag_chain = initialize_system(use_documents=True)
-
-# Query
-result = rag_chain.ask(
-    question="What is RAG?",
-    top_k=3  # Optional, defaults to Config.TOP_K_RESULTS
-)
-
-# Result structure:
-# {
-#   "question": str,
-#   "answer": str,
-#   "context": List[Document],
-#   "sources": List[Dict[str, str]]
-# }
+result = rag_chain.ask(question="What is RAG?", top_k=3)
+# Returns: { question, answer, context, sources, documents }
 ```
 
-**Agent API:**
+### Agent Executor (full agent with tools + memory)
+
 ```python
 from src.agent.agent_executor_v3 import AgentExecutorV3
 from src.agent.tool_registry import ToolRegistry
-from src.config import Config
-
-# Setup
-tool_registry = ToolRegistry()
-# ... register tools ...
 
 agent = AgentExecutorV3(
     llm=llm,
@@ -651,611 +1211,299 @@ agent = AgentExecutorV3(
     enable_reflection=True
 )
 
-# Execute
-result = agent.execute(
-    query="What's the latest AI news?",
-    session_id="user123",
-    user_id="user@example.com"
-)
-
-# Result structure:
-# {
-#   "answer": str,
-#   "reasoning": str,
-#   "tools_used": List[str],
-#   "sources": List[Dict],
-#   "memory_context": str
-# }
+result = agent.execute(query="What's the latest AI news?", session_id="user123")
+# Returns: { answer, reasoning, tools_used, sources, memory_context }
 ```
 
-Evidence: [src/rag_chain.py](src/rag_chain.py#L197-L289), [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py)
+### Memory Manager (standalone usage)
 
-### Redis Queue API
-
-**Submit Task:**
 ```python
-from src.queue import TaskQueue, TaskPriority
+from src.agent.memory import MemoryManager
+
+mm = MemoryManager(session_id="session-1")
+mm.add_user_message("What is RAG?")
+mm.add_assistant_message("RAG is...", tools_used=["document_search"])
+
+# Get full context for next query
+context = mm.get_full_context("Tell me more", include_episodic=True)
+
+# End session — saves to disk as Episode
+mm.finalize_session()
+```
+
+### Redis Queue (async processing)
+
+```python
+from src.task_queue import TaskQueue, TaskPriority
 
 queue = TaskQueue()
-
-task_id = queue.submit_task(
-    query="Analyze this data",
-    priority=TaskPriority.HIGH,
-    user_id="user123",
-    metadata={"source": "api"}
-)
-
-# Get result
+task_id = queue.submit_task(query="Analyze this data", priority=TaskPriority.HIGH)
 result = queue.get_result(task_id, timeout=60)
 ```
 
-**Worker:**
+---
+
+## Scripts & Utilities
+
+| Script | Location | Command | Purpose |
+|--------|----------|---------|---------|
+| Setup DB | `scripts/setup/init_database.py` | `make setup` | Create PostgreSQL tables & indexes |
+| Migrate to Pinecone | `scripts/setup/migrate_to_pinecone.py` | Manual | Migrate FAISS → Pinecone |
+| Reindex Docs | `scripts/maintenance/reindex_documents.py` | `make reindex` | Rebuild the entire vector store |
+| Health Check | `scripts/monitoring/check_backend_status.py` | `make check` | Check all service connections |
+
+---
+
+## Testing
+
+### Run Tests
+
 ```bash
-python queue_worker.py
+make test          # All tests
+make test-quick    # Unit tests only (fast)
 ```
 
-Evidence: [REDIS_QUEUE_GUIDE.md](REDIS_QUEUE_GUIDE.md), [src/queue/task_queue.py](src/queue/task_queue.py)
+### Test Structure
+
+| Directory | Tests | What They Cover |
+|-----------|-------|-----------------|
+| `tests/unit/` | `test_config.py` | Configuration validation |
+| | `test_embeddings.py` | Embedding generation |
+| | `test_rag_chain_unit.py` | RAG pipeline logic |
+| | `test_memory.py` | Memory system (conversation + episodic) |
+| | `test_tools.py` | Individual tool execution |
+| | `test_vector_store.py` | Vector store operations |
+| `tests/integration/` | `test_agent_system.py` | Full agent workflow |
+| | `test_manager_agent.py` | Multi-agent orchestration |
+| | `test_qa_tools.py` | QA tool integration |
+| | `test_rag_chain.py` | RAG end-to-end |
+| | `test_conversation_memory_fix.py` | Memory persistence |
+| | `test_relevance_filter.py` | Reranking accuracy |
+
+**Fixtures:** `tests/conftest.py` — shared pytest fixtures and mocks.
 
 ---
 
-## Data Model
+## Design Patterns
 
-### Vector Store (FAISS/Pinecone)
-
-**Document Schema:**
-```python
-Document(
-    page_content: str,  # Chunk text
-    metadata: {
-        "source": str,      # e.g., "rag-overview.md"
-        "topic": str,       # e.g., "RAG Systems"
-        "chunk_id": int,    # 0, 1, 2, ...
-        "total_chunks": int
-    }
-)
-```
-
-Evidence: [src/document_loader.py](src/document_loader.py)
-
-### PostgreSQL Tables
-
-**Sessions:**
-```sql
-CREATE TABLE sessions (
-    session_id TEXT PRIMARY KEY,
-    user_id TEXT,
-    title TEXT,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
-    metadata JSONB,
-    is_active BOOLEAN
-);
-```
-
-**Messages:**
-```sql
-CREATE TABLE messages (
-    message_id SERIAL PRIMARY KEY,
-    session_id TEXT REFERENCES sessions(session_id),
-    role TEXT,  -- 'user', 'assistant', 'system'
-    content TEXT,
-    timestamp TIMESTAMP,
-    metadata JSONB,
-    tool_calls JSONB,
-    sources JSONB
-);
-```
-
-**Checkpoints (LangGraph):**
-```sql
-CREATE TABLE checkpoints (
-    thread_id TEXT,
-    checkpoint_id TEXT,
-    parent_checkpoint_id TEXT,
-    checkpoint JSONB,
-    metadata JSONB,
-    PRIMARY KEY (thread_id, checkpoint_id)
-);
-```
-
-Evidence: [src/database/models.py](src/database/models.py), [src/database/postgres_backend.py](src/database/postgres_backend.py)
-
-### File System Storage
-
-**Episodic Memory:**
-```
-data/episodic_memory/
-  <session_id>.json
-```
-
-**JSON Structure:**
-```json
-{
-  "session_id": "abc123",
-  "timestamp": "2026-02-03T10:30:00",
-  "summary": "User asked about RAG. Tools used: document_search",
-  "user_queries": ["What is RAG?"],
-  "tools_used": ["document_search"],
-  "outcomes": ["success"],
-  "key_entities": ["RAG", "retrieval"]
-}
-```
-
-**Learning Data:**
-```
-data/learning/
-  learning_data.pkl  # Pickled Python objects
-```
-
-**Reflections:**
-```
-data/reflections/
-  reflections.jsonl  # One JSON object per line
-```
-
-Evidence: [src/agent/memory/episodic_memory.py](src/agent/memory/episodic_memory.py#L79-L132), [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md)
+| Pattern | Where Used | Example |
+|---------|------------|---------|
+| **State Machine** | Agent Executor | LangGraph nodes + conditional edges |
+| **Registry** | Tool Registry | `register()`, `get_tool()`, `get_all_tools()` |
+| **Strategy** | Tools | Common `BaseTool` interface, interchangeable implementations |
+| **Singleton** | Observability | `ObservabilityManager` — single instance |
+| **Factory** | Document Manager | Picks FAISS or Pinecone based on config |
+| **Coordinator** | Memory Manager | Unified interface over ConversationMemory + EpisodicMemory |
+| **Template Method** | BaseTool | `run()` wraps `_run()` with timing/error handling |
+| **Observer** | QA Pipeline | Progress callbacks for UI updates |
 
 ---
 
-## Tools & Capabilities
+## Security
 
-### Available Tools
+### Protected Against
 
-| Tool Name | Purpose | Key Function | Features | Evidence |
-|-----------|---------|--------------|----------|----------|
-| `document_search` | Search uploaded docs (RAG) | `rag_chain.ask()` | Clean format, source citations | [src/agent/tools/rag_tool.py](src/agent/tools/rag_tool.py) |
-| `web_search` | Quick web search (returns URLs) | DuckDuckGo API | **Content deduplication**, rate limiting | [src/agent/tools/web_search_tool.py](src/agent/tools/web_search_tool.py) |
-| `web_agent` | Extract full content from URLs | Playwright + readability | **Content deduplication**, clean extraction | [src/agent/tools/web_agent_tool.py](src/agent/tools/web_agent_tool.py) |
-| `calculator` | Math calculations | `numexpr.evaluate()` | Safe evaluation | [src/agent/tools/calculator_tool.py](src/agent/tools/calculator_tool.py) |
-| `python_executor` | Safe Python code execution | RestrictedPython sandbox | Restricted imports | [src/agent/tools/code_executor_tool.py](src/agent/tools/code_executor_tool.py) |
-| `file_operations` | File system ops (list/read/write) | Sandboxed to `data/workspace/` | Path traversal protection | [src/agent/tools/file_ops_tool.py](src/agent/tools/file_ops_tool.py) |
-| `document_manager` | Manage uploaded docs | List/delete documents | Metadata tracking | [src/agent/tools/doc_management_tool.py](src/agent/tools/doc_management_tool.py) |
-
-### Content Deduplication (Web Tools)
-
-**Problem:** Web search results often contain repetitive promotional text from the same source, appearing multiple times and creating embarrassing outputs.
-
-**Solution:** Fingerprint-based content deduplication in all web tools.
-
-**Implementation:**
-```python
-# Example from web_search_tool.py:100-131
-seen_content = set()
-for result in results:
-    body = result.get('body', 'No description')
-
-    # Use first 100 chars as fingerprint
-    fingerprint = body[:100].lower().strip()
-
-    if fingerprint not in seen_content and body != 'No description':
-        content_parts.append(body)
-        source_titles.append(title)
-        seen_content.add(fingerprint)
-
-# Combine unique content only
-combined_content = " ".join(content_parts)
-```
-
-**Applied To:**
-- [web_search_tool.py](src/agent/tools/web_search_tool.py#L100-L131) - Search results
-- [news_api_tool.py](src/agent/tools/news_api_tool.py#L398-L422) - News articles
-- [web_agent_tool.py](src/agent/tools/web_agent_tool.py#L614-L630) - Page extracts
-
-**Result:** Clean, professional outputs with no repetition, suitable for showing to management.
-
-### Tool Selection Logic
-
-LLM receives this prompt with **natural conversation support**:
-```
-Available tools:
-- document_search: Search through uploaded documents (PDFs, files) in the knowledge base.
-  NOT for questions about this conversation or chat history.
-- web_search: Returns quick links and snippets from search engines. Use for finding URLs or quick facts.
-- web_agent: Visits websites, extracts full content. Use for comprehensive web research.
-- calculator: Perform mathematical calculations
-- python_executor: Execute Python code for data analysis or computation
-- file_operations: List, read, or write files in the workspace
-- document_manager: View and manage uploaded documents
-- none: Use when answering questions about THIS CONVERSATION, previous messages,
-  what was discussed earlier, or anything about the current chat session.
-
-**Important Rules:**
-1. If user asks about "our conversation", "what we discussed", "earlier" → use "none" (answer from memory)
-2. If user wants latest news or detailed web research → use "web_agent"
-3. If user wants to search uploaded documents → use "document_search"
-4. If user wants quick web facts or URLs → use "web_search"
-
-Based on the query, which tool should be used OR respond with "none"?
-```
-
-**Selection Examples:**
-- "What is RAG?" → `document_search` (knowledge base query)
-- "Latest AI news" → `web_search` → URLs → `web_agent` (auto-chain)
-- "Calculate 15% of $2500" → `calculator`
-- "Run Python to sort a list" → `python_executor`
-- **"Tell me about our previous conversation"** → `none` (answer from memory, faster)
-- **"What did we discuss earlier?"** → `none` (memory-based)
-- **"Summarize what we talked about"** → `none` (memory-based)
-
-**Performance Impact:**
-- Tool queries: 5-10s (tool execution + synthesis)
-- Memory queries ("none"): 3-5s (direct synthesis, no tool overhead)
-
-Evidence: [src/agent/tool_registry.py](src/agent/tool_registry.py#L64-L75), [src/agent/agent_executor_v3.py](src/agent/agent_executor_v3.py#L209-L236)
-
----
-
-## Security & Privacy
-
-### Authentication
-**Current State:** None (single-user mode)
-**TODO:** Add user auth before production deployment
-
-### Authorization
-**Policy Engine:** Controls which tools users can access
-**File Ops Sandbox:** Restricted to `data/workspace/` directory
-Evidence: [src/agent/tools/file_ops_tool.py](src/agent/tools/file_ops_tool.py), [src/policy/default_policies.yaml](src/policy/default_policies.yaml#L30-L40)
+| Threat | Mitigation |
+|--------|------------|
+| SQL Injection | Parameterized queries in PostgreSQL backend |
+| Code Injection | RestrictedPython sandbox for code executor |
+| Path Traversal | File operations sandboxed to `data/workspace/` |
+| Prompt Injection | Input validation via `InputValidator` class |
+| Rate Abuse | Policy engine rate limits (requests/min, tokens/session) |
+| Unsafe Tools | `CODE_EXECUTOR_ENABLED=false` and `FILE_OPS_ENABLED` scoped by default |
 
 ### Secret Handling
-**Secrets in `.env`:**
-- `GROQ_API_KEY` - loaded via `python-dotenv`, never logged
-- `PINECONE_API_KEY` - same
-- `DATABASE_URL` - contains password, never logged
 
-**Never log or return secrets to users.**
+- All secrets loaded from `.env` via `python-dotenv`
+- Never logged, printed, or exposed in UI
+- `.env` is gitignored
 
-**Evidence:** [src/config.py](src/config.py#L8-L9) uses `load_dotenv()`, no print statements of API keys
+### Security TODO
 
-### Input Validation
-
-**LLM Prompts:**
-- Truncated to prevent injection: `query[:100]` in spans
-- No user input directly executed as code (except via `python_executor` tool which uses RestrictedPython sandbox)
-
-**File Uploads:**
-- Only PDF, DOCX, TXT, MD allowed (validated by Streamlit file_uploader `type` parameter)
-- Parsed by trusted libraries (PyPDF, python-docx)
-
-**SQL:**
-- Uses parameterized queries (psycopg2/psycopg3) - no SQL injection risk
-- Evidence: [src/database/postgres_backend.py](src/database/postgres_backend.py)
-
-### Common Vulnerabilities
-
-**✅ Protected Against:**
-- SQL Injection (parameterized queries)
-- Code Injection (RestrictedPython sandbox)
-- Path Traversal (file ops sandboxed to workspace)
-- Prompt Injection (limited by truncation, but not fully solved)
-
-**⚠️ TODO:**
-- Rate limiting per user (currently per-system via policy engine)
-- User authentication
-- HTTPS in production deployment
-- Secrets management via Vault/AWS Secrets Manager
+- User authentication (OAuth/JWT)
+- HTTPS in production
+- Secrets manager integration (Vault/AWS Secrets Manager)
+- Content Security Policy headers
 
 ---
 
 ## Deployment
 
-### Local Development
+### Local
+
 ```bash
-streamlit run run_agent_ui.py
+make run
+# or: double-click run.command (Mac) / run.bat (Windows)
 ```
 
-### Docker (TODO)
-No Dockerfile currently. Recommended approach:
+### Docker
+
 ```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt && playwright install chromium
 COPY . .
-CMD ["streamlit", "run", "run_agent_ui.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+EXPOSE 8501
+CMD ["streamlit", "run", "src/ui/streamlit_app_agent.py", "--server.port", "8501"]
 ```
 
-### Streamlit Cloud
-1. Push to GitHub
-2. Connect at https://share.streamlit.io
-3. Add secrets in dashboard (GROQ_API_KEY, etc.)
-4. Deploy
-
-Evidence: [README.md](README.md#L543-L560)
-
 ### Production Checklist
-- [ ] Enable `USE_POLICY_ENGINE=true`
-- [ ] Configure PostgreSQL: `USE_POSTGRES=true`, set `DATABASE_URL`
-- [ ] Enable observability: `ENABLE_OBSERVABILITY=true`, configure OTLP endpoint
-- [ ] Set up Redis for queue: `USE_REDIS_QUEUE=true`, start workers
-- [ ] Disable dangerous tools: `CODE_EXECUTOR_ENABLED=false`
-- [ ] Configure rate limits in [src/policy/default_policies.yaml](src/policy/default_policies.yaml)
-- [ ] Set up monitoring (Jaeger/Honeycomb)
-- [ ] Add user authentication (not implemented yet)
-- [ ] Use HTTPS (reverse proxy like nginx)
 
-Evidence: [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+- [ ] Set `USE_POLICY_ENGINE=true`
+- [ ] Configure PostgreSQL (`USE_POSTGRES=true`)
+- [ ] Enable observability (`ENABLE_OBSERVABILITY=true`)
+- [ ] Set up Redis for queue (`USE_REDIS_QUEUE=true`)
+- [ ] Disable dangerous tools (`CODE_EXECUTOR_ENABLED=false`)
+- [ ] Configure rate limits in policy engine
+- [ ] Add user authentication
+- [ ] Use HTTPS / reverse proxy
+- [ ] Set `OTEL_ENVIRONMENT=production`
 
 ---
 
 ## Troubleshooting
 
-### Symptom: "Vector store not initialized"
+### Common Issues
 
-**Cause:** Vector store not loaded from disk on startup (bug fixed in commit af1b006)
-**Where to Look:** [src/vector_store.py:27-38](src/vector_store.py#L27-L38)
-**Fix:** Pull latest code, or manually upload documents and rebuild index
-Evidence: [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md#L10-L53)
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "Vector store not initialized" | No documents indexed | Upload documents via UI or place in `data/documents/` |
+| Slow first query (~90s) | Embedding model downloading | One-time download; subsequent runs are instant |
+| LLM rate limit errors | Groq free tier limits | Wait and retry, or upgrade Groq plan |
+| Web agent fails | Playwright not installed | Run `playwright install chromium` |
+| PostgreSQL connection failed | DB not running | Set `USE_POSTGRES=false` in `.env` if not using PostgreSQL |
+| Memory not persisting | episodic_memory dir missing | Auto-created on first use; check permissions |
+| "No module named src" | Wrong working directory | Run from project root |
+| Streamlit port in use | Another instance running | Kill process on port 8501 or use `--server.port 8502` |
+| App hangs with no response | `USE_POSTGRES=true` but no DB running | Set `USE_POSTGRES=false` in `.env` — TCP timeout causes hang |
+| Agent not initialized error | `FileOpsTool()` missing argument | Already fixed — `workspace_root` path now passed automatically |
+| Raw gibberish in web responses | LLM synthesis not running | Already fixed — `web_agent` results now go through synthesis |
 
-### Symptom: Slow embedding generation
+### Performance Issues
 
-**Cause:** HuggingFace downloads model on first run (~90MB)
-**Where to Look:** [src/embeddings.py](src/embeddings.py)
-**Fix:** Wait for download, subsequent runs are instant (model cached)
+| Symptom | Fix |
+|---------|-----|
+| Slow page load (10s+) | Already fixed — agent uses lazy initialization |
+| Slow queries (60s+) | Already fixed — async DB writes |
+| Repetitive web results | Already fixed — fingerprint-based deduplication |
+| Wrong tool for conversation | Already fixed — "none" option for memory-based answers |
+| Raw search snippets in output | Already fixed — web_agent + web_search + news_api results synthesized by LLM |
 
-### Symptom: LLM rate limit errors
+### Python 3.14 Compatibility
 
-**Cause:** Groq free tier limits
-**Where to Look:** [src/rag_chain.py:69](src/rag_chain.py#L69) (Groq API call)
-**Fix:** Wait and retry, or upgrade Groq plan
+This codebase runs on Python 3.14 which has stricter variable scoping rules. Key fixes applied:
 
-### Symptom: Web agent fails to extract content
-
-**Cause:** Playwright not installed or site blocks automation
-**Where to Look:** [src/agent/tools/web_agent_tool.py](src/agent/tools/web_agent_tool.py)
-**Fix:**
-1. `playwright install chromium`
-2. Check site's robots.txt
-3. Try different URL
-
-### Symptom: PostgreSQL connection failed
-
-**Cause:** Database not running or wrong credentials
-**Where to Look:** [src/config.py:101-106](src/config.py#L101-L106), [src/database/postgres_backend.py](src/database/postgres_backend.py)
-**Fix:**
-1. Start PostgreSQL: `brew services start postgresql@15` (macOS)
-2. Create database: `createdb rag_chatbot`
-3. Run migrations: `python init_database.py`
-
-Evidence: [POSTGRES_SETUP.md](POSTGRES_SETUP.md)
-
-### Symptom: Memory not persisting
-
-**Cause:** Bugs in learning/reflection modules (fixed in recent commits)
-**Where to Look:** [src/agent/reflection/learning_module.py](src/agent/reflection/learning_module.py), [src/agent/reflection/reflection_module.py](src/agent/reflection/reflection_module.py)
-**Fix:** Pull latest code (commits 91ec72f, a10db84)
-Evidence: [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md#L59-L183)
-
-### Symptom: Agent selects wrong tool
-
-**Cause:** Tool descriptions unclear or learning module needs more data
-**Where to Look:** Tool descriptions in [src/agent/tools/*.py](src/agent/tools/)
-**Fix:**
-1. Improve tool descriptions to be more specific
-2. Let agent process more queries to learn patterns
-3. Check `data/learning/learning_data.pkl` for tool success rates
-
-### Symptom: Policy violations not logging
-
-**Cause:** PostgreSQL not configured or policy engine disabled
-**Where to Look:** [src/config.py:109](src/config.py#L109), [src/policy/policy_engine.py](src/policy/policy_engine.py)
-**Fix:** Set `USE_POLICY_ENGINE=true` and `USE_POSTGRES=true` in `.env`
-
-### Symptom: High memory usage
-
-**Cause:** FAISS index loaded entirely in RAM
-**Where to Look:** [src/vector_store.py](src/vector_store.py)
-**Fix:**
-1. Switch to Pinecone (cloud-based): `USE_PINECONE=true`
-2. Reduce document corpus size
-3. Use smaller embedding model
-
-### Symptom: Observability traces not appearing
-
-**Cause:** Wrong exporter endpoint or observability disabled
-**Where to Look:** [src/config.py:122-133](src/config.py#L122-L133), [src/observability.py](src/observability.py)
-**Fix:**
-1. Set `ENABLE_OBSERVABILITY=true`
-2. Start Jaeger: `docker run -d -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest`
-3. Set `OTEL_EXPORTER_ENDPOINT=http://localhost:4317`
-4. Check Jaeger UI at http://localhost:16686
-
-### Symptom: Code executor tool disabled
-
-**Cause:** Safety setting (disabled by default)
-**Where to Look:** [src/config.py:82](src/config.py#L82)
-**Fix:** Set `CODE_EXECUTOR_ENABLED=true` in `.env` (only in trusted environments)
-
-### Symptom: Slow page load (10+ seconds)
-
-**Cause:** Agent initialization blocking UI render (fixed in latest)
-**Where to Look:** [src/ui/streamlit_app_agent.py:174-199](src/ui/streamlit_app_agent.py#L174-L199)
-**Fix:** Already fixed via lazy loading. Update to latest code if seeing this.
-
-### Symptom: Slow query responses (60+ seconds)
-
-**Cause:** Synchronous database writes, too many agent iterations
-**Where to Look:** [.env](. env#L25-L27), [src/database/postgres_backend.py:310-347](src/database/postgres_backend.py#L310-L347)
-**Fix:** Already fixed via async writes and reduced iterations. Update to latest code.
-
-### Symptom: Repetitive content in web search results
-
-**Cause:** No deduplication of similar content (fixed in latest)
-**Where to Look:** [src/agent/tools/web_search_tool.py:100-131](src/agent/tools/web_search_tool.py#L100-L131)
-**Fix:** Already fixed via fingerprint-based deduplication. Update to latest code.
-
-### Symptom: Agent searches documents for conversation history
-
-**Cause:** No natural conversation support (fixed in latest)
-**Where to Look:** [src/agent/agent_executor_v3.py:209-236](src/agent/agent_executor_v3.py#L209-L236)
-**Fix:** Already fixed via "none" option in routing. Update to latest code.
-
-### Symptom: Streamlit duplicate element key error
-
-**Cause:** Same widget key used multiple times in loop (fixed in latest)
-**Where to Look:** [src/ui/streamlit_app_agent.py:404-423](src/ui/streamlit_app_agent.py#L404-L423)
-**Fix:** Already fixed by adding unique_id parameter. Update to latest code.
-
----
-
-## Future: Dev Assist Tool
-
-### Vision
-
-Transform the RAG agent into a **developer assistance tool** for:
-1. **Confluence Integration** - Fetch documentation from Confluence spaces
-2. **QA Test Case Generation** - Generate test cases from requirement PDFs
-3. **Code Understanding** - Analyze code and technical documentation
-4. **Requirements Analysis** - Extract requirements and generate test plans
-
-### Planned Features
-
-**1. Confluence Tool**
-```python
-class ConfluenceTool(BaseTool):
-    """Fetch and search Confluence documentation."""
-
-    def search_pages(self, query: str, space_key: str) -> List[Page]:
-        """Search Confluence pages by keywords."""
-
-    def fetch_page(self, page_id: str) -> Page:
-        """Fetch specific Confluence page content."""
-
-    def list_space_pages(self, space_key: str) -> List[Page]:
-        """List all pages in a Confluence space."""
-```
-
-**2. Test Case Generator**
-```python
-class TestCaseGeneratorTool(BaseTool):
-    """Generate QA test cases from requirement documents."""
-
-    def generate_test_cases(
-        self,
-        requirements: str,
-        format: str = "bdd"  # "bdd", "steps", "gherkin"
-    ) -> str:
-        """Generate structured test cases."""
-```
-
-**3. Configuration for Dev Use Case**
-```bash
-# Dev assist prioritizes quality over speed
-AGENT_MODE=hybrid  # Better reasoning for complex dev tasks
-AGENT_MAX_ITERATIONS=5  # More iterations for thorough analysis
-REFLECTION_ENABLED=true  # Quality matters for test case generation
-MEMORY_WINDOW_SIZE=10  # More context for requirements analysis
-
-# Enable recursive refinement for test cases
-ENABLE_RECURSIVE_REFINEMENT=true
-MAX_REFINEMENT_ITERATIONS=2  # Generate → Review → Refine
-```
-
-### Trade-offs for Dev Assist
-
-**Speed vs. Quality:**
-- **Current (Fast Chat):** 3-5s responses, react mode, minimal iterations
-- **Dev Assist:** 15-20s responses, hybrid mode, recursive refinement
-- **Justification:** Developers will wait for accurate test cases; quality > speed
-
-**Token Consumption:**
-- **Current:** ~1,500 tokens/query
-- **With Refinement:** ~5,300 tokens/query (3.5x increase)
-- **Acceptable For:** Dev tools are used less frequently than chat; quality matters
-
-### Implementation Status
-
-**Current State:**
-- ✅ Fast RAG agent optimized for conversational queries
-- ✅ Natural conversation with memory
-- ✅ Clean, professional outputs (deduplication)
-- ❌ No Confluence integration
-- ❌ No structured test case generation
-- ❌ Reflection disabled for speed
-
-**Next Steps:**
-1. Add Confluence tool with API authentication
-2. Create test case generation prompts (BDD, Gherkin, steps format)
-3. Enable selective recursion for dev tasks (not all queries)
-4. Add quality scoring for test case coverage
+- **No local re-imports in nested scopes** — `import re` and `from langchain_core.messages import HumanMessage` must be at the top of the file, not inside `try` blocks or methods. Python 3.14 treats local imports as shadowing the module-level import for the entire enclosing function, causing `UnboundLocalError` when the import is in an `if` branch that isn't taken.
+- **`@st.cache_resource` not stacked** — Using two `@st.cache_resource` decorators on the same function causes caching corruption. Use only one.
 
 ---
 
 ## Glossary
 
-| Term | Definition | Where in Code |
-|------|------------|---------------|
-| **RAG** | Retrieval-Augmented Generation - retrieve docs then generate answer | [src/rag_chain.py](src/rag_chain.py) |
-| **Embedding** | Vector representation of text for similarity search | [src/embeddings.py](src/embeddings.py) |
-| **Vector Store** | Database for storing/searching embeddings (FAISS or Pinecone) | [src/vector_store.py](src/vector_store.py) |
-| **Chunk** | Text segment (800 chars default) for indexing | [src/config.py:35](src/config.py#L35) |
-| **LangGraph** | State machine framework for agents | [src/agent/agent_executor_v3.py:103](src/agent/agent_executor_v3.py#L103) |
-| **Tool** | Agent capability (search, calculate, etc.) | [src/agent/tools/](src/agent/tools/) |
-| **Episodic Memory** | Long-term summaries of past sessions | [src/agent/memory/episodic_memory.py](src/agent/memory/episodic_memory.py) |
-| **Reflection** | Agent self-evaluation of decisions | [src/agent/reflection/reflection_module.py](src/agent/reflection/reflection_module.py) |
-| **Policy** | Rule governing agent behavior (rate limits, etc.) | [src/policy/default_policies.yaml](src/policy/default_policies.yaml) |
-| **Checkpoint** | Saved agent state for crash recovery | [src/database/checkpoint_backend.py](src/database/checkpoint_backend.py) |
+| Term | Definition |
+|------|------------|
+| **RAG** | Retrieval-Augmented Generation — retrieve relevant docs, then generate answer |
+| **Embedding** | Dense vector representation of text for similarity search |
+| **Vector Store** | Database for storing/searching embeddings (FAISS local or Pinecone cloud) |
+| **Chunk** | Text segment (~800 chars) created by splitting documents for indexing |
+| **Reranking** | Cross-encoder model that re-scores retrieved chunks for relevance |
+| **LangGraph** | State machine framework for building agent workflows |
+| **Tool** | Agent capability (search docs, browse web, calculate, generate tests, etc.) |
+| **Episodic Memory** | Long-term JSON summaries of past conversation sessions |
+| **Conversation Memory** | Short-term in-session message history with auto-summarization |
+| **Checkpoint** | Serialized agent state saved to PostgreSQL for crash recovery |
+| **Reflection** | Agent self-evaluation of its decisions and answer quality |
+| **Learning Module** | Pattern extractor that tracks tool success rates and optimizes future decisions |
+| **Policy Engine** | Rule system controlling which tools/actions are allowed |
+| **Manager Agent** | Orchestrator that breaks complex tasks into subtasks for specialized agents |
+| **QA Pipeline** | Automated workflow: extract requirements → generate tests → analyze gaps |
 
 ---
 
-## Appendix
+## Key Classes Quick Reference
 
-### Key Dependencies
-- `langchain-groq` - Groq LLM integration
-- `langchain-huggingface` - HuggingFace embeddings
-- `faiss-cpu` - Local vector search
-- `pinecone-client` - Cloud vector database
-- `streamlit` - Web UI framework
-- `langgraph` - Agent state machines
-- `playwright` - Web browsing automation
-- `psycopg2` / `psycopg` - PostgreSQL adapters
-- `redis` - Message queue client
-- `opentelemetry-*` - Observability
-
-Evidence: [requirements.txt](requirements.txt)
-
-### Open Questions / TODOs
-
-1. **User Authentication:** How to implement? OAuth? JWT? (No auth currently)
-2. **Scaling:** How to handle 1000+ concurrent users? (Currently single-instance)
-3. **Cost Tracking:** How to accurately track per-user costs? (Policy engine has basic support)
-4. **Multi-tenancy:** How to isolate user data? (Pinecone namespaces partially solve this)
-5. **Test Coverage:** What's the current test coverage? (No test files found - **CRITICAL TODO**)
-6. **Confluence Integration:** Need to implement Confluence API tool for dev assist use case
-7. **Test Case Generation:** Need structured prompts and format templates (BDD, Gherkin, etc.)
-8. **Recursive Refinement:** Should we enable for dev assist? Trade-off: 3.5x token cost, better quality
-9. **Selective Recursion:** Detect complex queries that need refinement vs. simple queries that don't
-
-**Recent Wins (2026-02-04):**
-- ✅ Fixed slow page load (lazy loading)
-- ✅ Fixed slow queries (async DB writes, reduced iterations)
-- ✅ Fixed repetitive content (deduplication)
-- ✅ Fixed natural conversation (memory-based answers)
-- ✅ Fixed duplicate key error (unique widget keys)
-
-**Files Needed for Full Understanding:**
-- Test suite (doesn't exist yet)
-- CI/CD configuration (no `.github/workflows/` found)
-- Production deployment config (Dockerfile, k8s manifests)
-- Confluence tool implementation
-- Test case generator prompts
-
-### Related Documentation
-- [README.md](README.md) - Quick start and feature overview
-- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Production deployment
-- [POLICY_ENGINE_GUIDE.md](POLICY_ENGINE_GUIDE.md) - Policy configuration
-- [REDIS_QUEUE_GUIDE.md](REDIS_QUEUE_GUIDE.md) - Queue setup
-- [OBSERVABILITY_GUIDE.md](OBSERVABILITY_GUIDE.md) - Monitoring setup
-- [PERSISTENCE_BUGS_ANALYSIS.md](PERSISTENCE_BUGS_ANALYSIS.md) - Recent bug fixes
+| Component | Class | File | Purpose |
+|-----------|-------|------|---------|
+| Agent | `AgentExecutorV3` | `src/agent/agent_executor_v3.py` | LangGraph state machine orchestrator |
+| State | `AgentState` | `src/agent/agent_state.py` | TypedDict defining execution state |
+| Tools | `ToolRegistry` | `src/agent/tool_registry.py` | Tool registry & management |
+| Tool Base | `BaseTool` | `src/agent/tools/base_tool.py` | Abstract tool base class |
+| RAG | `RAGChain` | `src/rag_chain.py` | Retrieval-augmented generation |
+| Memory | `MemoryManager` | `src/agent/memory/memory_manager.py` | Unified memory interface |
+| Conversation | `ConversationMemory` | `src/agent/memory/conversation_memory.py` | Session memory |
+| Episodic | `EpisodicMemory` | `src/agent/memory/episodic_memory.py` | Cross-session memory |
+| Reflection | `ReflectionModule` | `src/agent/reflection/reflection_module.py` | Self-evaluation |
+| Learning | `LearningModule` | `src/agent/reflection/learning_module.py` | Pattern extraction |
+| Manager | `ManagerAgent` | `src/agent/manager_agent.py` | Multi-agent orchestrator |
+| Config | `Config` | `src/config.py` | Central configuration |
+| Embeddings | `EmbeddingManager` | `src/embeddings.py` | Text splitting & embeddings |
+| Vector Store | `VectorStoreManager` | `src/vector_store.py` | FAISS vector store |
+| Doc Manager | `DocumentManager` | `src/document_manager.py` | Unified doc interface |
+| Checkpoints | `CheckpointManager` | `src/database/checkpoint_backend.py` | LangGraph checkpointing |
+| Policy | `PolicyEngine` | `src/policy/policy_engine.py` | Behavior control & audit |
+| Observability | `ObservabilityManager` | `src/observability.py` | OpenTelemetry tracing |
+| Task Queue | `TaskQueue` | `src/task_queue/task_queue.py` | Redis task management |
+| UI | `streamlit_app_agent.py` | `src/ui/streamlit_app_agent.py` | Web interface |
+| State Mgr | `state_manager.py` | `src/ui/state_manager.py` | Session state |
 
 ---
 
-**End of Codebase Guide**
-*This document is accurate as of 2026-02-04. Updated with performance optimizations, natural conversation support, and dev assist tool roadmap.*
+## Related Documentation
 
-**Recent Updates (2026-02-04):**
-- Added performance optimization journey and fixes
-- Documented natural conversation flow (memory-based answers)
-- Added content deduplication in web tools
-- Updated configuration for speed-optimized vs. quality-focused modes
-- Added dev assist tool vision and roadmap (Confluence, test case generation)
-- Updated troubleshooting with recent fixes
+| Document | Location | Topic |
+|----------|----------|-------|
+| Configuration | `docs/CONFIGURATION.md` | All config options |
+| Auto Indexing | `docs/AUTO_INDEXING_GUIDE.md` | Automatic document indexing |
+| Checkpoints | `docs/CHECKPOINT_GUIDE.md` | Crash recovery setup |
+| Deployment | `docs/DEPLOYMENT_GUIDE.md` | Production deployment |
+| External Services | `docs/EXTERNAL_SERVICES_SETUP.md` | Third-party integrations |
+| Observability | `docs/OBSERVABILITY_GUIDE.md` | Monitoring & tracing |
+| Pinecone Migration | `docs/PINECONE_MIGRATION_GUIDE.md` | FAISS → Pinecone |
+| Policy Engine | `docs/POLICY_ENGINE_GUIDE.md` | Policy configuration |
+| PostgreSQL | `docs/POSTGRES_SETUP.md` | Database setup |
+| QA Features | `docs/QA_FEATURES_REFERENCE.md` | QA tool reference |
+| QA Tools | `docs/QA_TOOLS_GUIDE.md` | QA tool usage guide |
+| Redis Queue | `docs/REDIS_QUEUE_GUIDE.md` | Queue setup |
+| Relevance | `docs/RELEVANCE_FILTERING.md` | Search relevance tuning |
+| Streamlit Deploy | `docs/STREAMLIT_DEPLOYMENT.md` | Streamlit Cloud deployment |
+| Web Scraping | `docs/WEB_SCRAPING_ENHANCEMENTS.md` | Web agent details |
+
+---
+
+## Changelog (2026-02-09)
+
+Bugfixes and improvements applied during this session:
+
+### Bugs Fixed
+
+| # | Bug | Root Cause | Fix | File(s) |
+|---|-----|-----------|-----|---------|
+| 1 | App hangs with no response | `USE_POSTGRES=true` in `.env` but PostgreSQL not running — TCP connection timeout blocks the entire query | Set `USE_POSTGRES=false` | `.env` |
+| 2 | Agent silently fails to initialize | `FileOpsTool()` called without required `workspace_root` argument — crashes agent init, error swallowed | Pass `workspace_root=Path("data/workspace")` | `src/ui/streamlit_app_agent.py:183` |
+| 3 | `UnboundLocalError: HumanMessage` | Local `from langchain_core.messages import HumanMessage` inside a `try` block shadows the module-level import on Python 3.14 | Removed local import; use top-level import only | `src/agent/agent_executor_v3.py:548` |
+| 4 | `UnboundLocalError: re` | Local `import re` inside nested `try` blocks (3 occurrences) shadows the module-level import on Python 3.14 | Moved `import re` to top of file; removed all 3 local imports | `src/agent/agent_executor_v3.py:3` |
+| 5 | Raw gibberish in web responses | LLM synthesis only ran for `web_search` and `news_api` but the router often selects `web_agent` — raw snippets returned unsynthesized | Added `web_agent` to the synthesis condition | `src/agent/agent_executor_v3.py:588` |
+| 6 | Double `@st.cache_resource` decorator | Two stacked `@st.cache_resource` decorators on `_get_rag_chain()` caused caching corruption | Removed the duplicate decorator | `src/ui/streamlit_app_agent.py:138` |
+
+### UI Improvements
+
+| # | Change | Before | After | File(s) |
+|---|--------|--------|-------|---------|
+| 1 | Tab-based layout | Welcome tabs disappear when chat starts | Two top-level tabs: "Chat" and "Tools & Features" — always accessible | `src/ui/streamlit_app_agent.py` |
+| 2 | LLM answer quality | Wall of raw search snippets concatenated together | 3 short, readable paragraphs structured as a news briefing | `src/agent/agent_executor_v3.py` (synthesis prompt) |
+| 3 | macOS launcher | No way to start app by clicking | `run.command` file — double-click in Finder to start | `run.command` (new file) |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `.env` | `USE_POSTGRES=false` |
+| `src/agent/agent_executor_v3.py` | Added `import re` at top; removed 3 local `import re`; removed local `import HumanMessage`; added `web_agent` to synthesis; improved synthesis prompt |
+| `src/ui/streamlit_app_agent.py` | Fixed `FileOpsTool(workspace_root=...)` init; removed duplicate `@st.cache_resource`; restructured to tab-based layout (Chat + Tools); added debug logging |
+| `run.command` | New file — macOS double-click launcher |
+| `CODEBASE_GUIDE.md` | Comprehensive rewrite with all components documented |
+
+---
+
+*This document reflects the codebase as of 2026-02-09.*

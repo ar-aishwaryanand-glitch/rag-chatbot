@@ -224,13 +224,13 @@ def render_enhanced_sidebar_header():
     """Render an enhanced sidebar header."""
     header_html = """
     <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-         padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;
+         padding: 1.25rem; border-radius: 12px; margin-bottom: 1rem;
          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-        <h2 style="color: white; margin: 0; font-size: 1.5rem; font-weight: 700;">
-            ⚙️ Agent Controls
+        <h2 style="color: white; margin: 0; font-size: 1.25rem; font-weight: 700;">
+            🧪 QA Expert
         </h2>
-        <p style="color: rgba(255, 255, 255, 0.9); margin: 0.5rem 0 0 0; font-size: 0.9rem;">
-            Configure agent behavior and features
+        <p style="color: rgba(255, 255, 255, 0.9); margin: 0.25rem 0 0 0; font-size: 0.85rem;">
+            Settings & Tools
         </p>
     </div>
     """
@@ -483,3 +483,350 @@ def render_stats_cards():
             </div>
             """
             st.markdown(card_html, unsafe_allow_html=True)
+
+
+def render_qa_action_card(icon: str, title: str, description: str, key: str) -> bool:
+    """
+    Render a QA action card with icon, title, and description.
+
+    Args:
+        icon: Emoji icon
+        title: Card title
+        description: Short description
+        key: Unique button key
+
+    Returns:
+        True if clicked
+    """
+    card_html = f"""
+    <div class="qa-action-card">
+        <span class="qa-action-icon">{icon}</span>
+        <div class="qa-action-content">
+            <div class="qa-action-title">{title}</div>
+            <div class="qa-action-description">{description}</div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+    return st.button(f"Use {title}", key=key, use_container_width=True, type="secondary")
+
+
+def render_onboarding_steps():
+    """Render getting started onboarding steps."""
+    steps = [
+        {
+            "title": "Upload Documents",
+            "text": "Add PDFs, docs, or import from Confluence to build your knowledge base"
+        },
+        {
+            "title": "Ask Questions",
+            "text": "Chat naturally - I'll search your documents and the web for answers"
+        },
+        {
+            "title": "Generate Tests",
+            "text": "Use QA tools to create test cases, BDD scenarios, and test data"
+        }
+    ]
+
+    st.markdown('<div class="quick-start-title">🚀 Quick Start</div>', unsafe_allow_html=True)
+
+    for idx, step in enumerate(steps, 1):
+        step_html = f"""
+        <div class="onboarding-step fade-in" style="animation-delay: {idx * 0.1}s;">
+            <span class="onboarding-number">{idx}</span>
+            <div class="onboarding-content">
+                <div class="onboarding-title">{step['title']}</div>
+                <div class="onboarding-text">{step['text']}</div>
+            </div>
+        </div>
+        """
+        st.markdown(step_html, unsafe_allow_html=True)
+
+
+def render_simple_prompts():
+    """Render simple clickable prompt suggestions."""
+    prompts = [
+        {"icon": "📄", "text": "What documents are indexed?"},
+        {"icon": "🧪", "text": "Generate test cases for user login"},
+        {"icon": "🔍", "text": "Search for API documentation"},
+        {"icon": "🐛", "text": "Help me write a bug report"},
+    ]
+
+    st.markdown("### 💡 Try asking...")
+
+    cols = st.columns(2)
+    selected = None
+
+    for idx, prompt in enumerate(prompts):
+        col = cols[idx % 2]
+        with col:
+            if st.button(
+                f"{prompt['icon']} {prompt['text']}",
+                key=f"simple_prompt_{idx}",
+                use_container_width=True,
+                type="secondary"
+            ):
+                selected = prompt['text']
+
+    return selected
+
+
+def render_qa_dashboard():
+    """Render a user-friendly QA tools dashboard."""
+    st.markdown("### 🎯 QA Tools")
+
+    # Primary actions row
+    col1, col2 = st.columns(2)
+
+    actions = {
+        'generate': None,
+        'analyze': None,
+        'bdd': None,
+        'data': None,
+        'bug': None,
+        'trace': None
+    }
+
+    with col1:
+        if st.button("📝 Generate Tests", use_container_width=True, type="primary", key="qa_dash_gen"):
+            actions['generate'] = True
+
+        if st.button("🥒 BDD Scenarios", use_container_width=True, key="qa_dash_bdd"):
+            actions['bdd'] = True
+
+        if st.button("🐛 Bug Report", use_container_width=True, key="qa_dash_bug"):
+            actions['bug'] = True
+
+    with col2:
+        if st.button("🔍 Analyze Coverage", use_container_width=True, key="qa_dash_analyze"):
+            actions['analyze'] = True
+
+        if st.button("🎲 Test Data", use_container_width=True, key="qa_dash_data"):
+            actions['data'] = True
+
+        if st.button("📊 Traceability", use_container_width=True, key="qa_dash_trace"):
+            actions['trace'] = True
+
+    # Return which action was clicked
+    for action, clicked in actions.items():
+        if clicked:
+            return action
+
+    return None
+
+
+def render_empty_chat_state():
+    """Render an empty state for the chat area."""
+    empty_html = """
+    <div class="empty-state fade-in">
+        <div class="empty-state-icon">💬</div>
+        <div class="empty-state-title">Start a Conversation</div>
+        <div class="empty-state-text">
+            Ask me anything! I can search documents, generate test cases,
+            browse the web, and help with QA tasks.
+        </div>
+    </div>
+    """
+    st.markdown(empty_html, unsafe_allow_html=True)
+
+
+def render_mode_indicator(mode: str):
+    """Render a visual mode indicator."""
+    mode_html = f"""
+    <div class="mode-indicator fade-in">
+        <span>🎯</span>
+        <span>{mode} Mode</span>
+    </div>
+    """
+    st.markdown(mode_html, unsafe_allow_html=True)
+
+
+def render_compact_sidebar_section(title: str, icon: str):
+    """Render a compact sidebar section header."""
+    header_html = f"""
+    <div class="sidebar-section-title">
+        <span>{icon}</span>
+        <span>{title}</span>
+    </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+
+
+def render_home_document_upload():
+    """Render document upload section for home screen."""
+    st.markdown("### 📁 Upload Documents")
+    st.caption("Add files to your knowledge base")
+
+    uploaded_files = st.file_uploader(
+        "Drag and drop files here",
+        type=['txt', 'md', 'pdf', 'docx'],
+        accept_multiple_files=True,
+        help="Upload .txt, .md, .pdf, or .docx files",
+        label_visibility="collapsed",
+        key="home_file_upload"
+    )
+
+    if uploaded_files:
+        st.info(f"📚 {len(uploaded_files)} file(s) selected")
+        with st.expander("View files"):
+            for file in uploaded_files:
+                st.markdown(f"• {file.name} ({file.size / 1024:.1f} KB)")
+
+    return uploaded_files
+
+
+def render_home_confluence_import():
+    """Render Confluence import section for home screen."""
+    from src.confluence_loader import is_confluence_configured
+
+    st.markdown("### 🔗 Confluence Import")
+
+    if not is_confluence_configured():
+        st.info("Confluence not configured. Set CONFLUENCE_ENABLED=true in .env")
+        return None
+
+    st.caption("Import pages from Confluence")
+
+    from src.config import Config
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        space_key = st.text_input(
+            "Space Key",
+            value=Config.CONFLUENCE_SPACE_KEY or "",
+            placeholder="e.g., DOCS",
+            key="home_confluence_space"
+        )
+
+    with col2:
+        fetch_mode = st.selectbox(
+            "Fetch Mode",
+            options=["All pages", "Search", "Page ID"],
+            key="home_confluence_mode"
+        )
+
+    search_query = None
+    page_id = None
+    limit = 50
+
+    if fetch_mode == "Search":
+        search_query = st.text_input("Search query", placeholder="Enter search terms...", key="home_conf_search")
+    elif fetch_mode == "Page ID":
+        page_id = st.text_input("Page ID", placeholder="Enter page ID...", key="home_conf_pageid")
+    else:
+        limit = st.slider("Max pages", 10, 100, 50, key="home_conf_limit")
+
+    return {
+        "space_key": space_key,
+        "fetch_mode": fetch_mode,
+        "search_query": search_query,
+        "page_id": page_id,
+        "limit": limit
+    }
+
+
+def render_home_test_generator():
+    """Render test case generator section for home screen."""
+    st.markdown("### 🧪 Test Case Generator")
+    st.caption("Generate test cases from indexed requirements")
+
+    tc_query = st.text_input(
+        "Feature to test",
+        placeholder="e.g., User Authentication, Shopping Cart...",
+        key="home_tc_query"
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        tc_format = st.selectbox(
+            "Output",
+            options=["Documentation", "Pytest Code", "Both"],
+            key="home_tc_format"
+        )
+
+    with col2:
+        tc_count = st.selectbox(
+            "Depth",
+            options=[5, 10, 15, 20],
+            index=1,
+            key="home_tc_count"
+        )
+
+    with col3:
+        tc_priority = st.selectbox(
+            "Focus",
+            options=["All", "Functional", "Edge Cases", "Negative"],
+            key="home_tc_priority"
+        )
+
+    return {
+        "query": tc_query,
+        "format": tc_format,
+        "count": tc_count,
+        "priority": tc_priority
+    }
+
+
+def render_home_qa_pipeline():
+    """Render QA pipeline section for home screen."""
+    st.markdown("### 🔄 Auto QA Pipeline")
+    st.caption("Run full pipeline: Requirements → Tests → Gap Analysis")
+
+    pipeline_topic = st.text_input(
+        "Topic/Feature Area",
+        placeholder="e.g., User Authentication",
+        key="home_pipeline_topic"
+    )
+
+    auto_run = st.checkbox(
+        "Auto-run after document import",
+        key="home_auto_pipeline"
+    )
+
+    return {
+        "topic": pipeline_topic,
+        "auto_run": auto_run
+    }
+
+
+def render_home_action_card(icon: str, title: str, description: str, color: str = "#6366f1"):
+    """Render an action card for home screen."""
+    card_html = f"""
+    <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(51, 65, 85, 0.6) 100%);
+         border: 1px solid {color}40; border-radius: 16px; padding: 1.5rem; margin: 0.5rem 0;
+         transition: all 0.3s ease; border-left: 4px solid {color};">
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+            <span style="font-size: 2rem;">{icon}</span>
+            <h4 style="color: #f1f5f9; margin: 0; font-size: 1.1rem; font-weight: 600;">{title}</h4>
+        </div>
+        <p style="color: #94a3b8; margin: 0; font-size: 0.9rem; line-height: 1.5;">{description}</p>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
+def render_home_settings():
+    """Render AI settings section for home screen."""
+    st.markdown("### 🧠 AI Features")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        memory = st.checkbox(
+            "🧠 Memory System",
+            value=st.session_state.get('enable_memory', True),
+            help="Agent remembers conversation history",
+            key="home_memory"
+        )
+
+    with col2:
+        reflection = st.checkbox(
+            "🔄 Self-Reflection",
+            value=st.session_state.get('enable_reflection', True),
+            help="Agent evaluates and learns from actions",
+            key="home_reflection"
+        )
+
+    return {"memory": memory, "reflection": reflection}

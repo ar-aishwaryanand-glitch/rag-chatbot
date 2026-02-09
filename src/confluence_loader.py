@@ -57,15 +57,17 @@ class ConfluenceLoader:
         self.api_token = api_token or Config.CONFLUENCE_API_TOKEN
         self.space_key = space_key or Config.CONFLUENCE_SPACE_KEY
 
-        if not all([self.url, self.username, self.api_token]):
+        if not all([self.url, self.api_token]):
             raise ValueError(
                 "Confluence credentials not configured. Please set "
-                "CONFLUENCE_URL, CONFLUENCE_USERNAME, and CONFLUENCE_API_TOKEN "
-                "in your .env file."
+                "CONFLUENCE_URL and CONFLUENCE_API_TOKEN in your .env file."
             )
 
-        self.auth = HTTPBasicAuth(self.username, self.api_token)
         self.api_base = f"{self.url}/rest/api"
+
+        # Detect if this is Confluence Server (uses Bearer token) or Cloud (uses Basic Auth)
+        # Server URLs typically don't have 'atlassian.net'
+        self.is_server = 'atlassian.net' not in self.url.lower()
 
     def _make_request(
         self,
@@ -74,14 +76,25 @@ class ConfluenceLoader:
     ) -> Dict[str, Any]:
         """Make an authenticated request to the Confluence API."""
         url = f"{self.api_base}/{endpoint}"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
+
+        # Use Bearer token for Confluence Server PATs, Basic Auth for Cloud
+        if self.is_server:
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_token}"
+            }
+            auth = None
+        else:
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            }
+            auth = HTTPBasicAuth(self.username, self.api_token)
 
         response = requests.get(
             url,
-            auth=self.auth,
+            auth=auth,
             headers=headers,
             params=params,
             timeout=30
@@ -142,6 +155,8 @@ class ConfluenceLoader:
         page_url = f"{self.url}{page_data.get('_links', {}).get('webui', '')}"
 
         return ConfluencePage(
+
+            
             id=page_data['id'],
             title=page_data['title'],
             space_key=page_data.get('space', {}).get('key', self.space_key),
