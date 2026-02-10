@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 # Third-party
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 # Local
 from src.logging_config import get_logger
@@ -25,6 +26,12 @@ except ImportError:
     POLICY_ENGINE_AVAILABLE = False
 
 logger = get_logger(__name__)
+
+
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """Check if an exception is a rate limit error worth retrying."""
+    msg = str(exc).lower()
+    return any(hint in msg for hint in ['rate_limit', 'rate limit', '429', 'too many requests', 'resource_exhausted'])
 
 
 class AgentExecutorV3:
@@ -107,6 +114,19 @@ class AgentExecutorV3:
                 self.policy_engine = None
 
         self.graph = self._build_graph()
+
+    @retry(
+        retry=retry_if_exception(_is_rate_limit_error),
+        wait=wait_exponential(multiplier=2, min=2, max=60),
+        stop=stop_after_attempt(4),
+        before_sleep=lambda rs: logger.warning(
+            f"Rate limited, retrying in {rs.next_action.sleep:.0f}s (attempt {rs.attempt_number}/4)"
+        ),
+        reraise=True,
+    )
+    def _invoke_llm(self, messages):
+        """Invoke LLM with automatic retry on rate limit errors."""
+        return self.llm.invoke(messages)
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state machine with reflection."""
@@ -244,7 +264,7 @@ Respond with ONLY the tool name or "none", nothing else."""
 
         try:
             # Get LLM decision
-            response = self.llm.invoke([HumanMessage(content=prompt)])
+            response = self._invoke_llm([HumanMessage(content=prompt)])
             selected_tool = response.content.strip().lower()
 
             # Handle "none" - answer from memory without tools
@@ -342,7 +362,7 @@ If you cannot create an expression, return "ERROR: cannot calculate"
 Query: {query}
 
 Expression:"""
-                    response = self.llm.invoke([HumanMessage(content=prompt)])
+                    response = self._invoke_llm([HumanMessage(content=prompt)])
                     raw_response = response.content.strip()
 
                     # Extract only the mathematical expression
@@ -378,7 +398,7 @@ Expression:"""
 Task: {query}
 
 Code:"""
-                    response = self.llm.invoke([HumanMessage(content=prompt)])
+                    response = self._invoke_llm([HumanMessage(content=prompt)])
                     code = response.content.strip().replace("```python", "").replace("```", "").strip()
                     result = tool.run(code=code)
 
@@ -392,7 +412,7 @@ Where operation is one of: read, list, search
 And path is the file/directory path (use "." if not specified)
 
 Response:"""
-                    response = self.llm.invoke([HumanMessage(content=prompt)])
+                    response = self._invoke_llm([HumanMessage(content=prompt)])
                     parts = response.content.strip().split(maxsplit=1)
                     operation = parts[0] if parts else "list"
                     path = parts[1] if len(parts) > 1 else "."
@@ -553,7 +573,7 @@ User Question: {query}
 Provide a natural, conversational response based on the conversation history. If the history doesn't contain relevant information, say so."""
 
                 try:
-                    response = self.llm.invoke([HumanMessage(content=synthesis_prompt)])
+                    response = self._invoke_llm([HumanMessage(content=synthesis_prompt)])
                     state['final_answer'] = response.content.strip()
                 except Exception as e:
                     state['final_answer'] = f"I have conversation history but encountered an error: {str(e)}"
@@ -637,7 +657,7 @@ Rules:
 - No URLs or website names.
 - Write naturally like a news briefing to a colleague."""
 
-                    response = self.llm.invoke([HumanMessage(content=synthesis_prompt)])
+                    response = self._invoke_llm([HumanMessage(content=synthesis_prompt)])
                     synthesized = response.content.strip()
 
                     # Clean up any markdown artifacts

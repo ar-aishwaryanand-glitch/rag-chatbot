@@ -13,6 +13,7 @@ sentence-transformers>=2.2.0  # Local embeddings models
 
 # Core dependencies with relaxed constraints
 langchain-core>=0.1.0
+tenacity>=9.0.0  # Retry with backoff for LLM rate limits
 langchain-google-genai>=0.1.0  # Optional: for Google embeddings
 
 # Simplified LangChain (without heavy dependencies)

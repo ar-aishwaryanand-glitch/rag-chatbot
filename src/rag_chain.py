@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 # Third-party
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 # Local
 from .config import Config
@@ -16,6 +17,13 @@ from .observability import get_observability
 from .logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """Check if an exception is a rate limit error worth retrying."""
+    msg = str(exc).lower()
+    return any(hint in msg for hint in ['rate_limit', 'rate limit', '429', 'too many requests', 'resource_exhausted'])
+
 
 if TYPE_CHECKING:
     from .vector_store import VectorStoreManager
@@ -225,6 +233,19 @@ Requirements Context:
                 "Supported providers: groq, google"
             )
 
+    @retry(
+        retry=retry_if_exception(_is_rate_limit_error),
+        wait=wait_exponential(multiplier=2, min=2, max=60),
+        stop=stop_after_attempt(4),
+        before_sleep=lambda rs: logger.warning(
+            f"Rate limited, retrying in {rs.next_action.sleep:.0f}s (attempt {rs.attempt_number}/4)"
+        ),
+        reraise=True,
+    )
+    def _invoke_llm(self, messages):
+        """Invoke LLM with automatic retry on rate limit errors."""
+        return self.llm.invoke(messages)
+
     def retrieve_context(
         self,
         query: str,
@@ -388,7 +409,7 @@ Requirements Context:
             )
 
             # Generate response
-            response = self.llm.invoke(messages)
+            response = self._invoke_llm(messages)
 
             # Add span attributes
             if span:
@@ -566,7 +587,7 @@ Requirements Context:
                     context=context,
                     question=prompt
                 )
-                response = self.llm.invoke(messages)
+                response = self._invoke_llm(messages)
                 test_cases = response.content
 
                 # Step 4: Extract sources
@@ -676,7 +697,7 @@ Requirements Context:
                     context=context,
                     question=requirement_query
                 )
-                response = self.llm.invoke(messages)
+                response = self._invoke_llm(messages)
                 pytest_code = response.content
 
                 # Clean up the code - remove markdown code blocks if present
