@@ -211,7 +211,7 @@ class LearningModule:
 
                 self._pending_saves = 0
 
-            except Exception:
+            except OSError:
                 # Clean up temp file on error
                 if Path(temp_path).exists():
                     Path(temp_path).unlink()

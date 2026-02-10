@@ -10,6 +10,10 @@ import streamlit as st
 import re
 from urllib.parse import urlparse
 
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # Upload directory (same as document uploads)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -83,7 +87,8 @@ def sanitize_url_for_filename(url: str) -> str:
 
         return filename
 
-    except Exception:
+    except Exception as e:
+        logger.debug(f"URL filename sanitization failed for {url}: {e}")
         return "web_content.txt"
 
 

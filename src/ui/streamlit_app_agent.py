@@ -878,8 +878,8 @@ def render_welcome_message_agent():
                     llm=st.session_state.rag_chain.llm,
                     enable_memory=True
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Manager agent initialization skipped: {e}")
 
         manager = st.session_state.get("manager_agent")
         if manager and hasattr(manager, 'agents'):
@@ -1118,8 +1118,8 @@ def render_welcome_message_agent():
             try:
                 from src.agent.task_scheduler import TaskScheduler
                 st.session_state.task_scheduler = TaskScheduler(st.session_state.manager_agent)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Task scheduler initialization skipped: {e}")
 
         scheduler = st.session_state.get("task_scheduler")
 

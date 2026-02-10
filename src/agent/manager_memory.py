@@ -109,7 +109,7 @@ class ManagerMemory:
                             data = json.loads(line)
                             self._history.append(ExecutionRecord.from_dict(data))
                 logger.info(f"Loaded {len(self._history)} execution records")
-            except Exception as e:
+            except (json.JSONDecodeError, OSError, KeyError) as e:
                 logger.error(f"Error loading history: {e}")
 
     def _load_performance(self):
@@ -120,7 +120,7 @@ class ManagerMemory:
                     data = json.load(f)
                     for name, metrics in data.items():
                         self._performance[name] = AgentPerformance(**metrics)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
                 logger.error(f"Error loading performance: {e}")
 
     def _load_patterns(self):
@@ -129,7 +129,7 @@ class ManagerMemory:
             try:
                 with open(self.patterns_file, 'r', encoding='utf-8') as f:
                     self._patterns = json.load(f)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.error(f"Error loading patterns: {e}")
 
     def _save_history_record(self, record: ExecutionRecord):
@@ -137,7 +137,7 @@ class ManagerMemory:
         try:
             with open(self.history_file, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(record.to_dict()) + '\n')
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error saving history record: {e}")
 
     def _save_performance(self):
@@ -149,7 +149,7 @@ class ManagerMemory:
             }
             with open(self.performance_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error saving performance: {e}")
 
     def _save_patterns(self):
@@ -157,7 +157,7 @@ class ManagerMemory:
         try:
             with open(self.patterns_file, 'w', encoding='utf-8') as f:
                 json.dump(self._patterns, f, indent=2)
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error saving patterns: {e}")
 
     def record_execution(
@@ -353,8 +353,8 @@ class ManagerMemory:
                     score += 3
                 elif days_ago < 30:
                     score += 1
-            except Exception:
-                pass
+            except ValueError:
+                logger.debug(f"Invalid timestamp format: {record.timestamp}")
 
             if score > 0:
                 scored_records.append((score, record))
@@ -527,8 +527,8 @@ class ManagerMemory:
                     activity["this_week"] += 1
                 if days_ago < 30:
                     activity["this_month"] += 1
-            except Exception:
-                pass
+            except ValueError:
+                logger.debug(f"Invalid timestamp format: {record.timestamp}")
 
         return activity
 
@@ -560,7 +560,7 @@ class ManagerMemory:
             with open(self.history_file, 'w', encoding='utf-8') as f:
                 for record in self._history:
                     f.write(json.dumps(record.to_dict()) + '\n')
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error rewriting history: {e}")
 
     def clear_history(self):

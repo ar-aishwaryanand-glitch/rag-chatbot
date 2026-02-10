@@ -704,8 +704,8 @@ Output as JSON:
                 response = self.llm.invoke(messages)
                 summary_parts.append("\n### AI Summary:")
                 summary_parts.append(response.content)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"AI summary generation failed: {e}")
 
         return "\n".join(summary_parts)
 

@@ -5,6 +5,9 @@ in the Streamlit interface.
 """
 
 import streamlit as st
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 from typing import Dict
 from .state_manager import trigger_rebuild, clear_chat_history, update_config, get_config
 from .document_handler import (
@@ -287,7 +290,8 @@ def render_session_manager():
     if 'session_manager' not in st.session_state:
         try:
             st.session_state.session_manager = SessionManager()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Session manager initialization failed: {e}")
             return  # Failed to initialize
 
     session_mgr = st.session_state.session_manager

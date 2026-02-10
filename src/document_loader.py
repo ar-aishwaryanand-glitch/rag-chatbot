@@ -112,7 +112,7 @@ def load_text_files(directory: str = None) -> List[Dict[str, str]]:
 
             logger.info(f"Loaded: {file_path.name}")
 
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
             logger.error(f"Error loading {file_path.name}: {e}")
 
     return documents
@@ -176,7 +176,7 @@ def load_pdfs(directory: str = None) -> List[Dict[str, str]]:
 
             logger.info(f"Loaded: {pdf_path.name} ({len(reader.pages)} pages)")
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.error(f"Error loading {pdf_path.name}: {e}")
 
     return documents

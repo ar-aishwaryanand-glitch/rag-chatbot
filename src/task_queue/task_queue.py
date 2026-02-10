@@ -21,9 +21,11 @@ logger = get_logger(__name__)
 try:
     import redis
     from redis import Redis
+    from redis.exceptions import RedisError
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
+    RedisError = OSError  # Fallback for type hints
 
 from .task_models import (
     Task,
@@ -112,7 +114,7 @@ class TaskQueue:
 
             logger.info("Redis task queue initialized")
 
-        except Exception as e:
+        except (RedisError, OSError) as e:
             logger.warning(f"Failed to connect to Redis: {e}")
             logger.info("Task queue will be disabled")
             self.enabled = False
@@ -449,7 +451,7 @@ class TaskQueue:
                 'timestamp': datetime.now().isoformat()
             }
             self.redis_client.publish(channel, json.dumps(message))
-        except Exception as e:
+        except (RedisError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to publish event: {e}")
 
     def subscribe_to_events(self, callback):
@@ -545,7 +547,7 @@ def get_task_queue() -> TaskQueue:
     if _task_queue is None:
         try:
             _task_queue = TaskQueue()
-        except Exception as e:
+        except (RedisError, OSError, ImportError) as e:
             logger.warning(f"Could not initialize task queue: {e}")
             # Create disabled queue
             _task_queue = TaskQueue.__new__(TaskQueue)

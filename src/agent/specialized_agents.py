@@ -101,8 +101,8 @@ class DevAgentInterface:
             docs = self.rag_chain.retrieve_context(instruction, k=5)
             if docs:
                 rag_context = self.rag_chain.format_context(docs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an expert software developer. Generate clean, well-documented code.
@@ -320,8 +320,8 @@ class DocAgentInterface:
             docs = self.rag_chain.retrieve_context(instruction, k=8)
             if docs:
                 rag_context = self.rag_chain.format_context(docs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a technical writer specializing in API documentation.
@@ -421,8 +421,8 @@ Project context:
             docs = self.rag_chain.retrieve_context(instruction, k=8)
             if docs:
                 rag_context = self.rag_chain.format_context(docs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a technical writer creating user-friendly guides.
@@ -467,8 +467,8 @@ Reference material:
             docs = self.rag_chain.retrieve_context(instruction, k=10)
             if docs:
                 rag_context = self.rag_chain.format_context(docs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a software architect documenting system design.
@@ -529,8 +529,8 @@ System context:
             docs = self.rag_chain.retrieve_context(instruction, k=5)
             if docs:
                 rag_context = self.rag_chain.format_context(docs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a technical writer. Create clear, comprehensive documentation.

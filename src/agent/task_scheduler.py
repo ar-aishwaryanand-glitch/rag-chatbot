@@ -113,7 +113,7 @@ class TaskScheduler:
                     for task_id, task_data in data.items():
                         self._tasks[task_id] = ScheduledTask.from_dict(task_data)
                 logger.info(f"Loaded {len(self._tasks)} scheduled tasks")
-            except Exception as e:
+            except (json.JSONDecodeError, OSError, KeyError) as e:
                 logger.error(f"Error loading tasks: {e}")
 
     def _save_tasks(self):
@@ -125,7 +125,7 @@ class TaskScheduler:
             }
             with open(self.tasks_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error saving tasks: {e}")
 
     def _log_execution(self, task: ScheduledTask, result: Dict):
@@ -140,7 +140,7 @@ class TaskScheduler:
                     "summary": result.get("summary", "")[:500]
                 }
                 f.write(json.dumps(log_entry) + '\n')
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error logging execution: {e}")
 
     def schedule_once(
@@ -302,8 +302,8 @@ class TaskScheduler:
                 next_run = datetime.fromisoformat(task.next_run)
                 if next_run <= now:
                     pending.append(task)
-            except Exception:
-                pass
+            except ValueError:
+                logger.debug(f"Invalid next_run format for task {task.id}: {task.next_run}")
 
         return pending
 
@@ -420,7 +420,7 @@ class TaskScheduler:
                     for line in lines[-limit:]:
                         if line.strip():
                             history.append(json.loads(line))
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.error(f"Error reading history: {e}")
 
         return list(reversed(history))
@@ -451,7 +451,8 @@ class TaskScheduler:
                 key=lambda t: datetime.fromisoformat(t.next_run)
             )
             return next_task.next_run
-        except Exception:
+        except ValueError as e:
+            logger.debug(f"Error parsing task schedules: {e}")
             return None
 
 

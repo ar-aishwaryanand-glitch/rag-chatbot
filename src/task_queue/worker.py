@@ -15,6 +15,11 @@ from src.logging_config import get_logger
 from src.config import Config
 from .task_queue import TaskQueue, get_task_queue
 
+try:
+    from redis.exceptions import RedisError
+except ImportError:
+    RedisError = OSError
+
 logger = get_logger(__name__)
 from .task_models import (
     Task,
@@ -390,7 +395,7 @@ class TaskWorker:
             logger.info(f"Indexed {len(chunks)} chunks from {source_name}")
             return len(chunks)
 
-        except Exception as e:
+        except (ImportError, OSError, ValueError) as e:
             logger.error(f"Failed to add to vector store: {e}")
             raise
 

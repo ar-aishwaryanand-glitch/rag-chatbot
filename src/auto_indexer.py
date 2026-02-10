@@ -47,7 +47,7 @@ class AutoIndexer:
             try:
                 with open(self.metadata_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Could not load index metadata: {e}")
                 return {"files": {}, "last_index": None}
         return {"files": {}, "last_index": None}
@@ -115,8 +115,9 @@ class AutoIndexer:
                     current_hash = self._get_file_hash(file_path)
                     if current_hash != old_info.get("hash"):
                         modified_files.append(file_path)
-                except Exception:
+                except (OSError, IOError) as e:
                     # If we can't read the file, treat as modified
+                    logger.debug(f"Cannot read file {file_path}, treating as modified: {e}")
                     modified_files.append(file_path)
 
         return {

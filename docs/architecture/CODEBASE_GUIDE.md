@@ -1,7 +1,7 @@
 # RAG Agent Codebase Guide
 
-**Last Updated:** 2026-02-09
-**Status:** Production-ready with Phase 4 features + bugfixes
+**Last Updated:** 2026-02-10
+**Status:** Production-ready with Phase 4 features + bugfixes + tech debt cleanup
 
 ---
 
@@ -194,6 +194,7 @@ rag-work/
 │   ├── document_loader.py             # PDF, DOCX, TXT, MD file parsing
 │   ├── auto_indexer.py                # Automatic document indexing
 │   ├── confluence_loader.py           # Confluence wiki integration
+│   ├── logging_config.py              # Centralized logging configuration
 │   ├── observability.py               # OpenTelemetry tracing & metrics
 │   │
 │   ├── agent/                         # ========== AGENT SYSTEM ==========
@@ -302,22 +303,34 @@ rag-work/
 │       ├── test_relevance_filter.py
 │       └── test_streamlit_integration.py
 │
-├── docs/                              # Extended documentation
-│   ├── CONFIGURATION.md
-│   ├── AUTO_INDEXING_GUIDE.md
-│   ├── CHECKPOINT_GUIDE.md
-│   ├── DEPLOYMENT_GUIDE.md
-│   ├── EXTERNAL_SERVICES_SETUP.md
-│   ├── OBSERVABILITY_GUIDE.md
-│   ├── PINECONE_MIGRATION_GUIDE.md
-│   ├── POLICY_ENGINE_GUIDE.md
-│   ├── POSTGRES_SETUP.md
-│   ├── QA_FEATURES_REFERENCE.md
-│   ├── QA_TOOLS_GUIDE.md
-│   ├── REDIS_QUEUE_GUIDE.md
-│   ├── RELEVANCE_FILTERING.md
-│   ├── STREAMLIT_DEPLOYMENT.md
-│   └── WEB_SCRAPING_ENHANCEMENTS.md
+├── docs/                              # Extended documentation (organized by category)
+│   ├── README.md                      # Documentation index
+│   ├── CONFIGURATION.md               # All config options
+│   ├── architecture/                  # System design docs
+│   │   ├── CODEBASE_GUIDE.md          # This file — comprehensive guide
+│   │   ├── AGENT_SYSTEM.md            # Agent architecture deep dive
+│   │   ├── DATABASE_PERSISTENCE.md    # DB schema & persistence
+│   │   ├── MEMORY_SYSTEM.md           # 3-tier memory design
+│   │   └── RAG_CORE.md               # RAG pipeline internals
+│   ├── features/                      # Feature-specific docs
+│   │   ├── CONFLUENCE_INTEGRATION.md
+│   │   ├── QA_FEATURES_REFERENCE.md
+│   │   ├── QA_TOOLS_GUIDE.md
+│   │   ├── RELEVANCE_FILTERING.md
+│   │   ├── TOOLS_REFERENCE.md
+│   │   └── WEB_SCRAPING_ENHANCEMENTS.md
+│   ├── operations/                    # Ops & maintenance docs
+│   │   ├── AUTO_INDEXING_GUIDE.md
+│   │   ├── CHECKPOINT_GUIDE.md
+│   │   ├── OBSERVABILITY_GUIDE.md
+│   │   ├── PINECONE_MIGRATION_GUIDE.md
+│   │   ├── POLICY_ENGINE_GUIDE.md
+│   │   └── REDIS_QUEUE_GUIDE.md
+│   └── setup/                         # Setup & deployment docs
+│       ├── DEPLOYMENT_GUIDE.md
+│       ├── EXTERNAL_SERVICES_SETUP.md
+│       ├── POSTGRES_SETUP.md
+│       └── STREAMLIT_DEPLOYMENT.md
 │
 ├── data/                              # Runtime data (gitignored)
 │   ├── documents/                     # Source docs (PDF, DOCX, TXT, MD)
@@ -1536,4 +1549,42 @@ Bugfixes and improvements applied during this session:
 
 ---
 
-*This document reflects the codebase as of 2026-02-09.*
+## Changelog (2026-02-10)
+
+### Technical Debt Cleanup (commits `a3670db`, `46a4bb2`, `e59b18c`)
+
+Comprehensive audit and refactoring across the entire codebase:
+
+| Area | Changes |
+|------|---------|
+| **Docs reorganization** | Flat `docs/` → organized into `architecture/`, `features/`, `operations/`, `setup/` with `docs/README.md` index |
+| **Logging** | New centralized `src/logging_config.py` — replaces scattered `print()` statements |
+| **Import cleanup** | Consistent imports across all modules; removed circular dependencies |
+| **Config hardening** | `src/config.py` — validation, type safety, better defaults |
+| **Database cleanup** | `src/database/` — improved `__init__.py` exports, `SessionManager` added to `__all__` |
+| **Vector store** | `src/vector_store.py` — FAISS checksum verification, improved batch processing |
+| **Pinecone backend** | `src/vector_store_pinecone.py` — error handling, connection resilience |
+| **Policy engine** | `src/policy/` — cleaner policy evaluation, store improvements |
+| **Task queue** | `src/task_queue/` — scheduler/worker/queue improvements |
+| **UI styles** | `src/ui/styles.py` — expanded CSS theming system (+744 lines) |
+| **UI components** | `src/ui/enhanced_components.py` — QA dashboard selected state, inline forms |
+| **Streamlit app** | `src/ui/streamlit_app_agent.py` — slimmed down (~1000 lines removed), cleaner tab structure |
+| **Supabase schema** | `scripts/setup/init_supabase_schema.sql` — moved from root |
+| **CONCERNS.md** | `.planning/codebase/CONCERNS.md` — updated technical debt audit |
+
+### Files Changed (65 files, +1,871 / -1,894 lines)
+
+Key modifications:
+- `src/__init__.py` — Package-level exports and version info
+- `src/config.py` — Validation, new defaults, type safety
+- `src/logging_config.py` — New: centralized logging
+- `src/ui/streamlit_app_agent.py` — Slimmed from ~2450 to ~1400 lines
+- `src/ui/styles.py` — Expanded CSS system
+- `src/ui/enhanced_components.py` — QA button selected state
+- `docs/` — Reorganized into 4 subdirectories
+- `docs/README.md` — New documentation index
+- `scripts/setup/init_supabase_schema.sql` — Moved from root
+
+---
+
+*This document reflects the codebase as of 2026-02-10.*

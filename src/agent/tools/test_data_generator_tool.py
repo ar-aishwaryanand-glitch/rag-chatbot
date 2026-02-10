@@ -2,8 +2,11 @@
 
 from typing import TYPE_CHECKING, Optional
 from .base_tool import BaseTool
+from src.logging_config import get_logger
 import re
 import json
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from src.rag_chain import RAGChain
@@ -64,8 +67,8 @@ edge case data, or boundary value analysis. Outputs JSON or CSV format."""
                 docs = self.rag_chain.retrieve_context(definitions, k=5)
                 if docs:
                     context = self.rag_chain.format_context(docs)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
             from langchain_core.prompts import ChatPromptTemplate
 

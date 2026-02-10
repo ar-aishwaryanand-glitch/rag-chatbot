@@ -91,7 +91,7 @@ class AgentExecutorV3:
                 self.checkpoint_manager = get_checkpoint_manager()
                 if not self.checkpoint_manager.is_available():
                     self.checkpoint_manager = None
-            except Exception as e:
+            except (ImportError, OSError) as e:
                 logger.warning(f"Checkpointing disabled: {e}")
                 self.checkpoint_manager = None
 
@@ -102,7 +102,7 @@ class AgentExecutorV3:
                 self.policy_engine = PolicyEngine()
                 if not self.policy_engine.is_enabled():
                     self.policy_engine = None
-            except Exception as e:
+            except (ImportError, OSError) as e:
                 logger.warning(f"Policy engine disabled: {e}")
                 self.policy_engine = None
 

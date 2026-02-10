@@ -16,6 +16,11 @@ from src.logging_config import get_logger
 from src.config import Config
 from .postgres_backend import PostgresBackend
 
+try:
+    from psycopg2 import DatabaseError
+except ImportError:
+    DatabaseError = OSError  # Fallback
+
 logger = get_logger(__name__)
 from .models import Session, Message, EpisodicMemory, SessionStats
 
@@ -42,7 +47,7 @@ class SessionManager:
             try:
                 self.backend = PostgresBackend(connection_string)
                 self.backend.initialize_database()
-            except Exception as e:
+            except (DatabaseError, OSError, ImportError) as e:
                 logger.warning(f"PostgreSQL connection failed: {e}. Falling back to file-based memory storage")
                 self.enabled = False
                 self.backend = None
@@ -86,7 +91,7 @@ class SessionManager:
             if self.backend.create_session(session):
                 return session_id
             return None
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error creating session: {e}")
             return None
 
@@ -190,7 +195,7 @@ class SessionManager:
                     'success_rate': stats.success_rate if stats else 0.0
                 } if stats else None
             }
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error restoring session: {e}")
             return None
 
@@ -246,7 +251,7 @@ class SessionManager:
 
             message_id = self.backend.add_message(message)
             return message_id is not None
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error logging message: {e}")
             return False
 
@@ -314,7 +319,7 @@ class SessionManager:
 
             memory_id = self.backend.add_memory(memory)
             return memory_id is not None
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error storing memory: {e}")
             return False
 
@@ -368,7 +373,7 @@ class SessionManager:
             stats.last_activity = datetime.now()
 
             return self.backend.update_stats(stats)
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error updating stats: {e}")
             return False
 

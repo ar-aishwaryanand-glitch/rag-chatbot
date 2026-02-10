@@ -22,9 +22,11 @@ except ImportError:
 try:
     import psycopg
     from psycopg.rows import dict_row
+    from psycopg import OperationalError as PsycopgError
     PSYCOPG_AVAILABLE = True
 except ImportError:
     PSYCOPG_AVAILABLE = False
+    PsycopgError = OSError  # Fallback for type hints
 
 
 class CheckpointManager:
@@ -88,7 +90,7 @@ class CheckpointManager:
 
             logger.info("LangGraph checkpoint storage initialized")
 
-        except Exception as e:
+        except (OSError, PsycopgError) as e:
             logger.warning(f"Failed to initialize checkpoint storage: {e}")
             logger.info("Checkpointing will be disabled")
             self.enabled = False
@@ -129,7 +131,7 @@ class CheckpointManager:
                 yield conn
             finally:
                 conn.close()
-        except Exception as e:
+        except (OSError, PsycopgError) as e:
             logger.error(f"Error getting checkpoint connection: {e}")
             yield None
 
@@ -164,7 +166,7 @@ class CheckpointManager:
 
                 return cursor.fetchall()
 
-        except Exception as e:
+        except (OSError, PsycopgError) as e:
             logger.error(f"Error listing checkpoints: {e}")
             return []
 
@@ -190,7 +192,7 @@ class CheckpointManager:
 
             return self.checkpoint_saver.get(config)
 
-        except Exception as e:
+        except (OSError, PsycopgError, KeyError) as e:
             logger.error(f"Error getting checkpoint: {e}")
             return None
 
@@ -219,7 +221,7 @@ class CheckpointManager:
                 conn.commit()
                 return True
 
-        except Exception as e:
+        except (OSError, PsycopgError) as e:
             logger.error(f"Error deleting checkpoints: {e}")
             return False
 
@@ -254,7 +256,7 @@ class CheckpointManager:
 
             return history
 
-        except Exception as e:
+        except (OSError, PsycopgError, KeyError) as e:
             logger.error(f"Error getting thread history: {e}")
             return []
 
@@ -263,7 +265,7 @@ class CheckpointManager:
         if hasattr(self, '_saver_context') and self._saver_context:
             try:
                 self._saver_context.__exit__(None, None, None)
-            except Exception as e:
+            except (OSError, PsycopgError) as e:
                 logger.warning(f"Error closing checkpoint saver: {e}")
         self.checkpoint_saver = None
         self._saver_context = None
@@ -285,7 +287,7 @@ def get_checkpoint_manager() -> CheckpointManager:
     if _checkpoint_manager is None:
         try:
             _checkpoint_manager = CheckpointManager()
-        except Exception as e:
+        except (OSError, PsycopgError, ImportError) as e:
             logger.warning(f"Could not initialize checkpoint manager: {e}")
             # Create a disabled manager
             _checkpoint_manager = CheckpointManager.__new__(CheckpointManager)

@@ -2,6 +2,9 @@
 
 from typing import TYPE_CHECKING, Optional
 from .base_tool import BaseTool
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from src.rag_chain import RAGChain
@@ -71,8 +74,8 @@ tool suggestions, and risk-based prioritization."""
                 docs = self.rag_chain.retrieve_context(description, k=5)
                 if docs:
                     context = self.rag_chain.format_context(docs)
-            except Exception:
-                pass  # Continue without RAG context
+            except Exception as e:
+                logger.debug(f"RAG context retrieval failed, continuing without context: {e}")
 
             from langchain_core.prompts import ChatPromptTemplate
 

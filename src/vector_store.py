@@ -92,7 +92,7 @@ class VectorStoreManager:
             logger.info("Vector store integrity verified")
             return True
 
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Checksum verification error: {e}")
             return False
 
@@ -104,7 +104,7 @@ class VectorStoreManager:
                 with open(self._checksum_file, 'w', encoding='utf-8') as f:
                     f.write(checksum)
                 logger.info("Saved integrity checksum")
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Could not save checksum: {e}")
 
     def create_vector_store(

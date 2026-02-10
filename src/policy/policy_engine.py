@@ -136,7 +136,7 @@ class PolicyEngine:
 
             logger.info(f"Loaded rate limit state from {self._rate_limit_file}")
 
-        except Exception as e:
+        except (json.JSONDecodeError, OSError, ValueError, KeyError) as e:
             logger.warning(f"Could not load rate limits: {e}")
 
     def _save_rate_limits(self) -> None:
@@ -185,7 +185,7 @@ class PolicyEngine:
 
                 temp_file.replace(self._rate_limit_file)
 
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Could not save rate limits: {e}")
 
     def _clean_old_tracking_data_all(self, now: datetime) -> None:
@@ -218,7 +218,7 @@ class PolicyEngine:
                     config = yaml.safe_load(f)
                     self._parse_policies(config)
                 logger.info(f"Loaded {len(self.policies)} policies from {config_path}")
-            except Exception as e:
+            except (yaml.YAMLError, OSError, KeyError, ValueError) as e:
                 logger.warning(f"Failed to load policies: {e}")
                 self._load_default_policies()
         else:
@@ -276,7 +276,7 @@ class PolicyEngine:
                 blocked_domains=set(data.get('blocked_domains', [])),
                 applies_to_tools=set(data.get('applies_to_tools', []))
             )
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to create tool policy: {e}")
             return None
 
@@ -299,7 +299,7 @@ class PolicyEngine:
                 max_tokens_per_day=data.get('max_tokens_per_day'),
                 cooldown_period_seconds=data.get('cooldown_period_seconds')
             )
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to create rate limit policy: {e}")
             return None
 
@@ -324,7 +324,7 @@ class PolicyEngine:
                 pii_detection_enabled=data.get('pii_detection_enabled', False),
                 profanity_filter_enabled=data.get('profanity_filter_enabled', False)
             )
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to create content policy: {e}")
             return None
 
@@ -346,7 +346,7 @@ class PolicyEngine:
                 cost_alert_threshold=data.get('cost_alert_threshold'),
                 token_cost_per_1k=data.get('token_cost_per_1k', 0.001)
             )
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to create cost policy: {e}")
             return None
 
@@ -366,7 +366,7 @@ class PolicyEngine:
                 allowed_roles=set(data.get('allowed_roles', [])),
                 required_permissions=set(data.get('required_permissions', []))
             )
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to create access policy: {e}")
             return None
 
@@ -591,7 +591,7 @@ class PolicyEngine:
                         violated_rules.append(policy)
                         if policy.action == PolicyAction.DENY:
                             highest_action = PolicyAction.DENY
-                except Exception as e:
+                except re.error as e:
                     # Log but don't fail on bad patterns
                     logger.warning(f"Regex pattern error: {e}")
 

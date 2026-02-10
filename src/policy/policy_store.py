@@ -18,9 +18,11 @@ try:
     import psycopg2
     from psycopg2.pool import SimpleConnectionPool
     from psycopg2.extras import RealDictCursor
+    from psycopg2 import DatabaseError
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
+    DatabaseError = OSError
 
 from .policy_definitions import (
     PolicyType,
@@ -76,7 +78,7 @@ class PolicyStore:
                 dsn=self.connection_string
             )
             logger.info("Policy store initialized")
-        except Exception as e:
+        except (DatabaseError, OSError) as e:
             logger.warning(f"Failed to initialize policy store: {e}")
             self.enabled = False
 
@@ -216,7 +218,7 @@ class PolicyStore:
                 cursor.close()
                 return True
 
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to save policy: {e}")
             return False
 
@@ -244,7 +246,7 @@ class PolicyStore:
 
                 return None
 
-        except Exception as e:
+        except DatabaseError as e:
             logger.warning(f"Failed to get policy: {e}")
             return None
 
@@ -279,7 +281,7 @@ class PolicyStore:
 
                 return [self._deserialize_policy(row) for row in rows]
 
-        except Exception as e:
+        except DatabaseError as e:
             logger.warning(f"Failed to list policies: {e}")
             return []
 
@@ -303,7 +305,7 @@ class PolicyStore:
                 cursor.close()
                 return True
 
-        except Exception as e:
+        except DatabaseError as e:
             logger.warning(f"Failed to delete policy: {e}")
             return False
 
@@ -342,7 +344,7 @@ class PolicyStore:
                 cursor.close()
                 return True
 
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to record violation: {e}")
             return False
 
@@ -380,7 +382,7 @@ class PolicyStore:
 
                 return [self._deserialize_violation(row) for row in rows]
 
-        except Exception as e:
+        except DatabaseError as e:
             logger.warning(f"Failed to get violations: {e}")
             return []
 
@@ -558,7 +560,7 @@ def get_policy_store() -> PolicyStore:
     if _policy_store is None:
         try:
             _policy_store = PolicyStore()
-        except Exception as e:
+        except (DatabaseError, OSError, ImportError) as e:
             logger.warning(f"Could not initialize policy store: {e}")
             # Create disabled store
             _policy_store = PolicyStore.__new__(PolicyStore)

@@ -194,7 +194,7 @@ class PostgresBackend:
                 ))
                 cursor.close()
                 return True
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.error(f"Error creating session: {e}")
             return False
 
@@ -220,7 +220,7 @@ class PostgresBackend:
                         is_active=row['is_active']
                     )
                 return None
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error getting session: {e}")
             return None
 
@@ -259,7 +259,7 @@ class PostgresBackend:
                     )
                     for row in rows
                 ]
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error listing sessions: {e}")
             return []
 
@@ -287,7 +287,7 @@ class PostgresBackend:
                     cursor.close()
                     return True
                 return False
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.error(f"Error updating session: {e}")
             return False
 
@@ -299,7 +299,7 @@ class PostgresBackend:
                 cursor.execute("DELETE FROM sessions WHERE session_id = %s", (session_id,))
                 cursor.close()
                 return True
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error deleting session: {e}")
             return False
 
@@ -349,7 +349,7 @@ class PostgresBackend:
                 self.update_session(message.session_id, updated_at=datetime.now())
 
                 return message_id
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.error(f"Error adding message: {e}")
             return None
 
@@ -389,7 +389,7 @@ class PostgresBackend:
                     )
                     for row in rows
                 ]
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error getting messages: {e}")
             return []
 
@@ -416,7 +416,7 @@ class PostgresBackend:
                 memory_id = cursor.fetchone()[0]
                 cursor.close()
                 return memory_id
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.error(f"Error adding memory: {e}")
             return None
 
@@ -455,7 +455,7 @@ class PostgresBackend:
                     )
                     for row in rows
                 ]
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error getting memories: {e}")
             return []
 
@@ -487,7 +487,7 @@ class PostgresBackend:
                 ))
                 cursor.close()
                 return True
-        except Exception as e:
+        except (DatabaseError, json.JSONDecodeError) as e:
             logger.error(f"Error updating stats: {e}")
             return False
 
@@ -513,7 +513,7 @@ class PostgresBackend:
                         last_activity=row['last_activity']
                     )
                 return None
-        except Exception as e:
+        except DatabaseError as e:
             logger.error(f"Error getting stats: {e}")
             return None
 
