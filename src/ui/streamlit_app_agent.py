@@ -238,8 +238,9 @@ def get_or_create_agent():
             import traceback
             logger.error(f"Agent init FAILED: {e}")
             logger.error(traceback.format_exc())
-            show_error(f"Failed to initialize agent: {str(e)}")
-            st.error(f"Agent initialization failed:\n{traceback.format_exc()}")
+            st.error(f"Failed to initialize agent. Please click Reset in the sidebar and try again.")
+            with st.expander("Technical details"):
+                st.code(traceback.format_exc())
             return None
     else:
         logger.debug("Agent already exists, reusing")
@@ -754,14 +755,13 @@ def handle_agent_query(prompt: str):
 
         st.session_state.messages.append({
             'role': 'assistant',
-            'content': f"Sorry, I encountered an error: {error_msg}",
+            'content': "I'm sorry, I ran into an issue processing your request. Please try rephrasing your question or click Clear to start fresh.",
             'agent_result': None,
             'timestamp': datetime.now()
         })
 
         import traceback
-        with st.expander("Show error details"):
-            st.code(traceback.format_exc())
+        logger.error(traceback.format_exc())
 
 
 def render_welcome_message_agent():
@@ -1401,17 +1401,16 @@ def _display_generated_test_cases():
 
 def render_main_chat_agent():
     """Render the main chat interface with agent capabilities and modern UI."""
-    # Auto-index documents on first load
+    # Auto-index documents on first load (optional, silent on failure)
     if 'startup_index_done' not in st.session_state:
         try:
-            from .auto_index_integration import check_and_index_on_startup
+            from src.ui.auto_index_integration import check_and_index_on_startup
             with st.spinner("🔍 Checking for new documents to index..."):
                 result = check_and_index_on_startup(force=False)
                 if result['status'] == 'success' and result.get('new', 0) > 0:
                     st.toast(f"✅ Indexed {result['new']} new documents!", icon="📚")
-        except Exception as e:
-            # Auto-indexing is optional - don't block app startup
-            logger.warning(f"Auto-indexing failed: {e}")
+        except Exception:
+            pass  # Auto-indexing is optional — fail silently
         finally:
             st.session_state.startup_index_done = True
 
@@ -1548,14 +1547,14 @@ def render_main_chat_agent():
                             render_memory_context()
                             render_reflection_insights()
                     else:
-                        st.warning("No assistant response generated.")
+                        st.info("Processing your request... please wait a moment and try again.")
                 else:
-                    st.warning("No messages in session state.")
+                    st.info("Processing your request... please wait a moment and try again.")
             except Exception as e:
                 import traceback
-                logger.error(f"ERROR: {e}")
+                logger.error(f"Chat error: {e}")
                 logger.error(traceback.format_exc())
-                st.error(f"Error: {str(e)}\n\n{traceback.format_exc()}")
+                st.error("Something went wrong. Please try again or click Clear to start fresh.")
 
         st.rerun()
 

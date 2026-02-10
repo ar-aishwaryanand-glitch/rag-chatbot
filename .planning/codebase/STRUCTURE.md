@@ -1,6 +1,6 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-02-09
+**Analysis Date:** 2026-02-10
 
 ## Directory Layout
 
@@ -71,16 +71,34 @@ rag-work/
 │   ├── uploaded/                # User-uploaded documents
 │   ├── learning/                # Learning module data
 │   └── reflections/             # Reflection logs (JSONL)
-├── docs/                         # Documentation
+├── docs/                         # Documentation (organized by category)
+│   ├── README.md                # Documentation index
 │   ├── CONFIGURATION.md
-│   ├── AUTO_INDEXING_GUIDE.md
-│   ├── DEPLOYMENT_GUIDE.md
-│   ├── EXTERNAL_SERVICES_SETUP.md
-│   ├── OBSERVABILITY_GUIDE.md
-│   ├── POSTGRES_SETUP.md
-│   ├── PINECONE_MIGRATION_GUIDE.md
-│   ├── QA_FEATURES_REFERENCE.md
-│   └── [other guides]
+│   ├── architecture/            # System design docs
+│   │   ├── CODEBASE_GUIDE.md
+│   │   ├── AGENT_SYSTEM.md
+│   │   ├── DATABASE_PERSISTENCE.md
+│   │   ├── MEMORY_SYSTEM.md
+│   │   └── RAG_CORE.md
+│   ├── features/                # Feature-specific docs
+│   │   ├── CONFLUENCE_INTEGRATION.md
+│   │   ├── QA_FEATURES_REFERENCE.md
+│   │   ├── QA_TOOLS_GUIDE.md
+│   │   ├── RELEVANCE_FILTERING.md
+│   │   ├── TOOLS_REFERENCE.md
+│   │   └── WEB_SCRAPING_ENHANCEMENTS.md
+│   ├── operations/              # Ops & maintenance docs
+│   │   ├── AUTO_INDEXING_GUIDE.md
+│   │   ├── CHECKPOINT_GUIDE.md
+│   │   ├── OBSERVABILITY_GUIDE.md
+│   │   ├── PINECONE_MIGRATION_GUIDE.md
+│   │   ├── POLICY_ENGINE_GUIDE.md
+│   │   └── REDIS_QUEUE_GUIDE.md
+│   └── setup/                   # Setup & deployment docs
+│       ├── DEPLOYMENT_GUIDE.md
+│       ├── EXTERNAL_SERVICES_SETUP.md
+│       ├── POSTGRES_SETUP.md
+│       └── STREAMLIT_DEPLOYMENT.md
 ├── scripts/                      # Utility scripts
 ├── .planning/                    # GSD planning documents
 │   └── codebase/                # Codebase analysis (ARCHITECTURE.md, STRUCTURE.md, etc.)
@@ -123,7 +141,7 @@ rag-work/
 **`src/ui/`:**
 - Purpose: Streamlit web interface
 - Contains: Main app, enhanced components, styles, state management
-- Key files: `streamlit_app_agent.py` (entry point, ~2500 lines)
+- Key files: `streamlit_app_agent.py` (entry point, ~1600 lines)
 
 **`src/database/`:**
 - Purpose: Persistent storage and session management
@@ -316,4 +334,4 @@ __all__ = ['BaseTool', 'ToolResult', 'RAGTool', 'WebSearchTool', ...]
 
 ---
 
-*Structure analysis: 2026-02-09*
+*Structure analysis: 2026-02-10*

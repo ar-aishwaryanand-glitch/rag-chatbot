@@ -1,7 +1,7 @@
 # RAG Agent Codebase Guide
 
 **Last Updated:** 2026-02-10
-**Status:** Production-ready with Phase 4 features + bugfixes + tech debt cleanup
+**Status:** Production-ready with Phase 4 features + bugfixes + tech debt cleanup + exception handling hardening
 
 ---
 
@@ -199,7 +199,7 @@ rag-work/
 │   │
 │   ├── agent/                         # ========== AGENT SYSTEM ==========
 │   │   ├── __init__.py                # Module exports
-│   │   ├── agent_executor_v3.py       # LangGraph state machine (1113 lines)
+│   │   ├── agent_executor_v3.py       # LangGraph state machine (~1100 lines)
 │   │   ├── agent_state.py             # AgentState TypedDict definition
 │   │   ├── types.py                   # Shared types: AgentType, TaskAssignment, etc.
 │   │   ├── tool_registry.py           # Tool registration & lookup
@@ -262,7 +262,7 @@ rag-work/
 │   │
 │   └── ui/                            # ========== STREAMLIT UI ==========
 │       ├── __init__.py
-│       ├── streamlit_app_agent.py     # Main application (2433 lines)
+│       ├── streamlit_app_agent.py     # Main application (~1600 lines)
 │       ├── state_manager.py           # Session state initialization
 │       ├── components.py              # Basic UI components
 │       ├── enhanced_components.py     # Advanced components (cards, dashboards)
@@ -370,7 +370,7 @@ make lint         # Check code style
 
 ### 1. RAG Chain
 
-**File:** `src/rag_chain.py` (~762 lines)
+**File:** `src/rag_chain.py` (~950 lines)
 **Class:** `RAGChain`
 
 The core retrieval-augmented generation pipeline. Retrieves relevant document chunks via vector similarity search, optionally reranks them, and passes them to an LLM to generate grounded answers.
@@ -401,7 +401,7 @@ Query → Embed → Vector Search (top_k) → Rerank (cross-encoder) → Format 
 
 ### 2. Agent Executor (LangGraph State Machine)
 
-**File:** `src/agent/agent_executor_v3.py` (~1113 lines)
+**File:** `src/agent/agent_executor_v3.py` (~1100 lines)
 **Class:** `AgentExecutorV3`
 
 The brain of the system. Uses LangGraph's `StateGraph` to orchestrate a multi-step workflow: understand the query, pick the right tool, execute it, synthesize an answer, and reflect on the decision.
@@ -931,7 +931,7 @@ result = queue.get_result(task_id, timeout=60)
 
 ### 13. Streamlit UI
 
-**Main File:** `src/ui/streamlit_app_agent.py` (~2450 lines)
+**Main File:** `src/ui/streamlit_app_agent.py` (~1600 lines)
 
 **Page Config:**
 - Title: "QA Expert Assistant"
@@ -1404,6 +1404,16 @@ CMD ["streamlit", "run", "src/ui/streamlit_app_agent.py", "--server.port", "8501
 | Wrong tool for conversation | Already fixed — "none" option for memory-based answers |
 | Raw search snippets in output | Already fixed — web_agent + web_search + news_api results synthesized by LLM |
 
+### Exception Handling
+
+All exception handlers in the codebase use specific exception types (not bare `except Exception`). When adding new code:
+
+- Use `OSError` / `PermissionError` for file operations
+- Use `json.JSONDecodeError` for JSON parsing
+- Use `ValueError` / `TypeError` / `KeyError` for data validation
+- Keep `except Exception` only for LLM calls or top-level fallbacks
+- Always log caught exceptions at `debug` or `warning` level — never silently pass
+
 ### Python 3.14 Compatibility
 
 This codebase runs on Python 3.14 which has stricter variable scoping rules. Key fixes applied:
@@ -1578,12 +1588,53 @@ Key modifications:
 - `src/__init__.py` — Package-level exports and version info
 - `src/config.py` — Validation, new defaults, type safety
 - `src/logging_config.py` — New: centralized logging
-- `src/ui/streamlit_app_agent.py` — Slimmed from ~2450 to ~1400 lines
+- `src/ui/streamlit_app_agent.py` — Slimmed from ~2450 to ~1600 lines
 - `src/ui/styles.py` — Expanded CSS system
 - `src/ui/enhanced_components.py` — QA button selected state
 - `docs/` — Reorganized into 4 subdirectories
 - `docs/README.md` — New documentation index
 - `scripts/setup/init_supabase_schema.sql` — Moved from root
+
+### QA Tool UX Improvements (commit `c4e607e`)
+
+| # | Change | Description |
+|---|--------|-------------|
+| 1 | Inline QA forms | QA tool forms now appear inline in the Tools tab instead of being hidden in the Chat tab |
+| 2 | Selected button state | Active QA button highlights with primary color + checkmark indicator |
+| 3 | Chat input persistence | Chat input stays visible outside tabs on all views |
+| 4 | Docs reorganization | Flat `docs/` directory restructured into `architecture/`, `features/`, `operations/`, `setup/` subdirectories |
+
+### Exception Handling Hardening (commit `ef77178`)
+
+Narrowed 48 broad `except Exception` handlers to specific exception types across 24 files:
+
+| Area | Exception Types Used |
+|------|---------------------|
+| File operations | `OSError`, `IOError`, `PermissionError` |
+| Database operations | `DatabaseError`, `OperationalError`, `InterfaceError` |
+| Redis queue | `RedisError`, `ConnectionError` |
+| JSON parsing | `json.JSONDecodeError`, `ValueError` |
+| HTTP/API calls | `requests.RequestException`, `httpx.HTTPError` |
+| LLM invocations | `Exception` (kept broad — LLM errors are unpredictable) |
+
+Additional improvements:
+- Added debug logging for 20 previously silent exception handlers
+- Added fallback type hints for optional dependencies (Redis, psycopg2)
+- Fixed RAG context retrieval to log failures instead of silently passing
+- QA tools (`bdd_generator`, `qa_analysis`, `test_data_generator`, `test_strategy`) now catch `KeyError`, `ValueError`, `TypeError` specifically
+
+### Uncommitted: Error UX Improvements
+
+User-facing error messages improved across the Streamlit UI:
+
+| Location | Before | After |
+|----------|--------|-------|
+| Agent init failure | Raw traceback shown inline | Clean error message + expandable "Technical details" section |
+| Query processing error | `"Sorry, I encountered an error: {error_msg}"` | `"I'm sorry, I ran into an issue processing your request..."` with guidance |
+| Chat error display | Raw `st.error(traceback)` | `"Something went wrong. Please try again or click Clear to start fresh."` |
+| No response generated | `st.warning("No assistant response generated.")` | `st.info("Processing your request... please wait a moment and try again.")` |
+| Auto-indexing failure | Warning logged to UI | Silently passes (auto-indexing is optional) |
+| Auto-index import | Relative import `from .auto_index_integration` | Absolute import `from src.ui.auto_index_integration` |
 
 ---
 

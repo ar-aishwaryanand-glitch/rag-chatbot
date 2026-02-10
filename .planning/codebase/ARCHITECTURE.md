@@ -188,8 +188,8 @@
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Approach: Mix of print() statements with emoji indicators + OpenTelemetry structured logging
-- Examples: "✂️ Split X documents into Y chunks", "🤖 Initializing Groq LLM"
+- Approach: Centralized logging via `src/logging_config.py` + OpenTelemetry structured logging
+- All modules use `get_logger(__name__)` from `logging_config.py`
 - ObservabilityManager (`src/observability.py`) wraps operations with spans/traces
 
 **Validation:**
@@ -208,4 +208,4 @@
 
 ---
 
-*Architecture analysis: 2026-02-09*
+*Architecture analysis: 2026-02-10*
